@@ -1,0 +1,39 @@
+import os
+from flask import Flask
+from supabase import create_client, Client
+from dotenv import load_dotenv
+
+load_dotenv()
+
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_key = (
+    os.getenv("SUPABASE_SECRET_KEY")
+    or os.getenv("SUPABASE_PUBLISHABLE_KEY")
+    or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    or os.getenv("SUPABASE_ANON_KEY")
+    or os.getenv("SUPABASE_KEY")
+)
+if not supabase_url or not supabase_key:
+    raise RuntimeError("Configure SUPABASE_URL e uma chave Supabase no arquivo .env.")
+
+app = Flask(__name__)
+
+supabase: Client = create_client(
+    supabase_url,
+    supabase_key,
+)
+
+@app.route('/')
+def index():
+    response = supabase.table('todos').select("*").execute()
+    todos = response.data
+
+    html = '<h1>Todos</h1><ul>'
+    for todo in todos:
+        html += f'<li>{todo["name"]}</li>'
+    html += '</ul>'
+
+    return html
+
+if __name__ == '__main__':
+    app.run(host="127.0.0.1", port=5000, debug=False)

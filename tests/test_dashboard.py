@@ -2,7 +2,26 @@ from pathlib import Path
 
 import pandas as pd
 
-from dashboard import load_measurements
+from dashboard import get_supabase_settings, load_measurements
+
+
+def test_get_supabase_settings_accepts_supabase_key_alias(monkeypatch) -> None:
+    monkeypatch.delenv("SUPABASE_ANON_KEY", raising=False)
+    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    monkeypatch.delenv("SUPABASE_PUBLISHABLE_KEY", raising=False)
+    monkeypatch.delenv("SUPABASE_SECRET_KEY", raising=False)
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_KEY", "test-key")
+
+    assert get_supabase_settings() == ("https://example.supabase.co", "test-key")
+
+
+def test_get_supabase_settings_prefers_publishable_key(monkeypatch) -> None:
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "publishable-test-key")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "old-anon-key")
+
+    assert get_supabase_settings() == ("https://example.supabase.co", "publishable-test-key")
 
 
 def test_load_measurements_reads_csv(tmp_path: Path) -> None:

@@ -6,6 +6,10 @@ from pathlib import Path
 import pandas as pd
 import requests
 import streamlit as st
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 
 DEFAULT_CSV_PATH = Path("data/measurements.csv")
@@ -17,7 +21,13 @@ st.set_page_config(page_title="Estação Raspberry", page_icon="🌡️", layout
 def get_supabase_settings() -> tuple[str | None, str | None]:
     """Lê as credenciais do Supabase a partir das variáveis de ambiente."""
     url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    key = (
+        os.getenv("SUPABASE_PUBLISHABLE_KEY")
+        or os.getenv("SUPABASE_ANON_KEY")
+        or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        or os.getenv("SUPABASE_KEY")
+        or os.getenv("SUPABASE_SECRET_KEY")
+    )
     return url, key
 
 

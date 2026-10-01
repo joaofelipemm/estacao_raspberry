@@ -88,22 +88,21 @@ def test_main_syncs_after_persisting_when_supabase_is_configured(tmp_path, monke
         def ensure_directories(self) -> None:
             return None
 
-    class FakeSyncClient:
-        def __init__(self, **kwargs) -> None:
-            sync_calls.append({"config": kwargs})
-
-        def send_measurement(self, reading) -> bool:
-            sync_calls.append({"reading": reading})
-            return True
+    def fake_sync(csv_path, **kwargs) -> int:
+        sync_calls.append({"csv_path": csv_path, "config": kwargs})
+        assert output_file.exists()
+        assert "8.3" in output_file.read_text(encoding="utf-8")
+        return 1
 
     monkeypatch.setattr("estacao_raspberry.main.DEFAULT_SETTINGS", Settings())
-    monkeypatch.setattr("estacao_raspberry.main.SupabaseSyncClient", FakeSyncClient)
+    monkeypatch.setattr("estacao_raspberry.main.sync_measurements_from_csv", fake_sync)
 
     main(port="/dev/ttyUSB0", serial_factory=lambda *args, **kwargs: fake_port, file_path=output_file)
 
     assert output_file.exists()
-    assert len(sync_calls) == 2
-    assert sync_calls[1]["reading"].rain_accumulated == 8.3
+    assert len(sync_calls) == 1
+    assert sync_calls[0]["csv_path"] == output_file
+    assert sync_calls[0]["config"]["device_id"] == "rpi-test"
 
 
 def test_main_keeps_local_measurement_when_supabase_sync_fails(tmp_path, monkeypatch, capsys) -> None:
@@ -120,18 +119,15 @@ def test_main_keeps_local_measurement_when_supabase_sync_fails(tmp_path, monkeyp
         def ensure_directories(self) -> None:
             return None
 
-    class FailingSyncClient:
-        def __init__(self, **kwargs) -> None:
-            pass
-
-        def send_measurement(self, reading) -> bool:
-            raise RuntimeError("network unavailable")
+    def failing_sync(csv_path, **kwargs) -> int:
+        assert output_file.exists()
+        raise RuntimeError("network unavailable")
 
     monkeypatch.setattr("estacao_raspberry.main.DEFAULT_SETTINGS", Settings())
-    monkeypatch.setattr("estacao_raspberry.main.SupabaseSyncClient", FailingSyncClient)
+    monkeypatch.setattr("estacao_raspberry.main.sync_measurements_from_csv", failing_sync)
 
     main(port="/dev/ttyUSB0", serial_factory=lambda *args, **kwargs: fake_port, file_path=output_file)
 
     content = output_file.read_text(encoding="utf-8")
     assert "8.3" in content
-    assert "leitura mantida no CSV" in capsys.readouterr().out
+    assert "leituras pendentes mantidas no CSV" in capsys.readouterr().out

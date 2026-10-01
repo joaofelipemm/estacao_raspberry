@@ -184,7 +184,9 @@ Centralizar os dados para histórico, análise e visualização remota.
 
 - Há tabelas para armazenar medições com ID, timestamp, temperatura, umidade e chuva acumulada.
 - A ingestão salva localmente antes de tentar sincronizar com Supabase.
-- Falhas de rede mantêm os dados no CSV; retry automático das pendências ainda está pendente.
+- Falhas de rede mantêm os dados no CSV com status pendente.
+- A sincronização tenta novamente até três vezes com backoff exponencial e retoma pendências na próxima execução.
+- Cada leitura usa `sync_id` estável com índice único no Supabase para evitar duplicatas em retries.
 - Os dados enviados têm campo de status e origem.
 - Existe tratamento para dados duplicados ou incompletos.
 
@@ -192,7 +194,7 @@ Centralizar os dados para histórico, análise e visualização remota.
 
 - Definir schema da tabela `measurements`.
 - Implementar cliente Python para Supabase.
-- Criar estratégia de retry e backoff.
+- Ampliar retries para um worker periódico independente da leitura serial.
 - Adicionar filas ou lotes de envio.
 - Validar integração com ambiente de desenvolvimento.
 

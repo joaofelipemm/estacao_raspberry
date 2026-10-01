@@ -56,12 +56,18 @@ ALTER TABLE public.measurements
 ADD COLUMN IF NOT EXISTS rain_accumulated double precision;
 
 ALTER TABLE public.measurements
+ADD COLUMN IF NOT EXISTS sync_id uuid;
+
+CREATE UNIQUE INDEX IF NOT EXISTS measurements_sync_id_unique
+ON public.measurements (sync_id);
+
+ALTER TABLE public.measurements
 ALTER COLUMN pressure DROP NOT NULL;
 ```
 
 O protocolo serial espera `TEMP`, `HUM` e `RAIN`, por exemplo: `<TEMP=23.4;HUM=58.1;RAIN=12.5>`. CSVs antigos são migrados preservando as leituras; os valores históricos de pressão ficam sem valor de chuva.
 
-Ao executar `python -m estacao_raspberry.main`, cada leitura é gravada localmente antes da tentativa de envio ao Supabase. Se o envio falhar, a leitura permanece no CSV e um aviso é exibido; o reenvio automático das pendências ainda não está implementado.
+Ao executar `python -m estacao_raspberry.main`, cada leitura é gravada localmente antes da sincronização. O CSV mantém um ID estável e o estado `pending`/`synced`; o Raspberry tenta cada pendência até três vezes com espera exponencial. Falhas mantêm a leitura pendente para a próxima execução. A coluna `sync_id` com índice único no Supabase torna seguro repetir uma requisição cuja resposta tenha se perdido.
 
 Depois:
 

@@ -6,6 +6,11 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -29,11 +34,25 @@ class Settings:
 
     @property
     def resolved_supabase_key(self) -> str:
-        return self.supabase_key or os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY") or ""
+        return (
+            self.supabase_key
+            or os.getenv("SUPABASE_SECRET_KEY")
+            or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+            or os.getenv("SUPABASE_ANON_KEY")
+            or os.getenv("SUPABASE_KEY")
+            or os.getenv("SUPABASE_PUBLISHABLE_KEY")
+            or ""
+        )
 
 
 DEFAULT_SETTINGS = Settings(
     device_id=os.getenv("DEVICE_ID", "raspberry-pi"),
     supabase_url=os.getenv("SUPABASE_URL"),
-    supabase_key=os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY"),
+    supabase_key=(
+        os.getenv("SUPABASE_SECRET_KEY")
+        or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        or os.getenv("SUPABASE_ANON_KEY")
+        or os.getenv("SUPABASE_KEY")
+        or os.getenv("SUPABASE_PUBLISHABLE_KEY")
+    ),
 )
