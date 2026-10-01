@@ -33,12 +33,35 @@ python -m estacao_raspberry.main
 pytest -q
 ```
 
+## Dashboard online-first
+
+O dashboard pode funcionar em nuvem sem depender de hardware local. Ao configurar as variáveis de ambiente do Supabase, a aplicação carrega os dados da tabela `measurements` automaticamente. Caso as variáveis não existam, o sistema usa o CSV local como fallback.
+
+```bash
+cp .env.example .env
+```
+
+Exemplo:
+
+```bash
+SUPABASE_URL=https://seu-projeto.supabase.co
+SUPABASE_ANON_KEY=sua_chave_anonima
+DEVICE_ID=raspberry-pi
+```
+
+Depois:
+
+```bash
+.\.venv\Scripts\streamlit.exe run dashboard.py
+```
+
 ## Próximos passos
 
 1. Adicionar leitura de sensores reais (DHT22, BMP280, etc.)
 2. Gravar dados em arquivo JSON/CSV
 3. Criar API ou painel web para visualizar informações
 4. Automatizar coleta com cron/systemd
+5. Melhorar a visualização do dashboard em Streamlit
 
 ## Observação
 
