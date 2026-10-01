@@ -51,7 +51,7 @@ class SupabaseSyncClient:
         status: str = "synced",
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        if reading.temperature is None or reading.humidity is None or reading.pressure is None:
+        if reading.temperature is None or reading.humidity is None or reading.rain_accumulated is None:
             raise ValueError("Leitura incompleta para sincronizar com o Supabase.")
 
         measurement_time = measured_at or datetime.now(timezone.utc)
@@ -63,7 +63,7 @@ class SupabaseSyncClient:
             "measured_at": measurement_time.astimezone(timezone.utc).isoformat(),
             "temperature": reading.temperature,
             "humidity": reading.humidity,
-            "pressure": reading.pressure,
+            "rain_accumulated": reading.rain_accumulated,
             "source": self.source,
             "status": status,
             "metadata": metadata or {},
@@ -118,6 +118,9 @@ def sync_measurements_from_csv(
     with path.open("r", encoding="utf-8", newline="") as csv_file:
         reader = csv.DictReader(csv_file)
         for row in reader:
+            rain_accumulated = row.get("rain_accumulated")
+            if rain_accumulated in (None, ""):
+                continue
             timestamp = row.get("timestamp")
             try:
                 measured_at = datetime.fromisoformat(timestamp) if timestamp else None
@@ -127,7 +130,7 @@ def sync_measurements_from_csv(
             reading = SensorReading(
                 temperature=float(row["temperature"]),
                 humidity=float(row["humidity"]),
-                pressure=float(row["pressure"]),
+                rain_accumulated=float(rain_accumulated),
             )
             if client.send_measurement(reading, measured_at=measured_at, status="synced"):
                 rows_synced += 1

@@ -25,8 +25,8 @@ def parse_serial_payload(
     """Converte uma mensagem serial em uma leitura normalizada.
 
     Formatos aceitos:
-    - <TEMP=23.4;HUM=58.1;PRES=1012.3;CRC=abc123>
-    - TEMP=23.4;HUM=58.1;PRES=1012.3
+    - <TEMP=23.4;HUM=58.1;RAIN=12.5;CRC=abc123>
+    - TEMP=23.4;HUM=58.1;RAIN=12.5
     """
     if not isinstance(payload, str):
         raise ValueError("Formato inválido: payload deve ser uma string.")
@@ -51,7 +51,7 @@ def parse_serial_payload(
         key, value = entry.split(protocol.field_separator, 1)
         digest[key.strip().upper()] = value.strip()
 
-    required = {"TEMP", "HUM", "PRES"}
+    required = {"TEMP", "HUM", "RAIN"}
     missing = sorted(required - digest.keys())
     if missing:
         raise ValueError(f"Formato inválido: campos ausentes: {', '.join(missing)}")
@@ -59,14 +59,14 @@ def parse_serial_payload(
     try:
         temperature = float(digest["TEMP"])
         humidity = float(digest["HUM"])
-        pressure = float(digest["PRES"])
+        rain_accumulated = float(digest["RAIN"])
     except ValueError as exc:  # pragma: no cover - branch covered by bad payload tests
         raise ValueError("Formato inválido: valores numéricos esperados em TEMP, HUM e PRES.") from exc
 
     return SensorReading(
         temperature=temperature,
         humidity=humidity,
-        pressure=pressure,
+        rain_accumulated=rain_accumulated,
     )
 
 

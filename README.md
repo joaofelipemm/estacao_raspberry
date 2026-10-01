@@ -49,6 +49,18 @@ SUPABASE_ANON_KEY=sua_chave_anonima
 DEVICE_ID=raspberry-pi
 ```
 
+A tabela `measurements` deve ter a coluna `rain_accumulated` (`double precision`), em milímetros. Para atualizar uma tabela existente no Supabase, execute no SQL Editor:
+
+```sql
+ALTER TABLE public.measurements
+ADD COLUMN IF NOT EXISTS rain_accumulated double precision;
+
+ALTER TABLE public.measurements
+ALTER COLUMN pressure DROP NOT NULL;
+```
+
+O protocolo serial espera `TEMP`, `HUM` e `RAIN`, por exemplo: `<TEMP=23.4;HUM=58.1;RAIN=12.5>`. CSVs antigos são migrados preservando as leituras; os valores históricos de pressão ficam sem valor de chuva.
+
 Depois:
 
 ```bash

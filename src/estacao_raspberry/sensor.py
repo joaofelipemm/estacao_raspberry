@@ -11,7 +11,7 @@ class SensorReading:
 
     temperature: float | None = None
     humidity: float | None = None
-    pressure: float | None = None
+    rain_accumulated: float | None = None
 
 
 class Sensor:
@@ -36,6 +36,6 @@ class Sensor:
         drivers reais de sensores de hardware.
         """
         if self.sensor_type == "mock":
-            return SensorReading(temperature=25.0, humidity=55.0, pressure=1013.0)
+            return SensorReading(temperature=25.0, humidity=55.0, rain_accumulated=0.0)
 
         raise ValueError(f"Tipo de sensor '{self.sensor_type}' não implementado.")

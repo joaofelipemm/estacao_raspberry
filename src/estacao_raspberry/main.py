@@ -42,7 +42,7 @@ def main(
 
     print(f"Temperatura: {reading.temperature} C")
     print(f"Umidade: {reading.humidity} %")
-    print(f"Pressão: {reading.pressure} hPa")
+    print(f"Chuva acumulada: {reading.rain_accumulated} mm")
     print(f"Dados salvos em: {store.file_path}")
     return reading
 

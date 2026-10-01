@@ -8,9 +8,9 @@ from dashboard import load_measurements
 def test_load_measurements_reads_csv(tmp_path: Path) -> None:
     csv_file = tmp_path / "measurements.csv"
     csv_file.write_text(
-        "timestamp,temperature,humidity,pressure\n"
-        "2026-10-01T12:00:00+00:00,22.5,60.0,1012.4\n"
-        "2026-10-01T12:05:00+00:00,23.1,58.8,1011.7\n",
+        "timestamp,temperature,humidity,rain_accumulated\n"
+        "2026-10-01T12:00:00+00:00,22.5,60.0,2.4\n"
+        "2026-10-01T12:05:00+00:00,23.1,58.8,3.7\n",
         encoding="utf-8",
     )
 
@@ -19,7 +19,7 @@ def test_load_measurements_reads_csv(tmp_path: Path) -> None:
     assert len(dataframe) == 2
     assert dataframe.iloc[-1]["temperature"] == 23.1
     assert dataframe.iloc[-1]["humidity"] == 58.8
-    assert dataframe.iloc[-1]["pressure"] == 1011.7
+    assert dataframe.iloc[-1]["rain_accumulated"] == 3.7
 
 
 def test_load_measurements_reads_supabase_when_configured(monkeypatch) -> None:
@@ -38,7 +38,7 @@ def test_load_measurements_reads_supabase_when_configured(monkeypatch) -> None:
                     "measured_at": "2026-10-01T12:00:00+00:00",
                     "temperature": 21.4,
                     "humidity": 63.1,
-                    "pressure": 1013.8,
+                    "rain_accumulated": 3.8,
                 }
             ]
 
@@ -50,4 +50,19 @@ def test_load_measurements_reads_supabase_when_configured(monkeypatch) -> None:
     assert len(dataframe) == 1
     assert dataframe.iloc[0]["temperature"] == 21.4
     assert dataframe.iloc[0]["humidity"] == 63.1
-    assert dataframe.iloc[0]["pressure"] == 1013.8
+    assert dataframe.iloc[0]["rain_accumulated"] == 3.8
+
+
+def test_load_measurements_does_not_treat_legacy_pressure_as_rain(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.delenv("SUPABASE_ANON_KEY", raising=False)
+    csv_file = tmp_path / "legacy.csv"
+    csv_file.write_text(
+        "timestamp,temperature,humidity,pressure\n"
+        "2026-10-01T12:00:00+00:00,22.5,60.0,1012.4\n",
+        encoding="utf-8",
+    )
+
+    dataframe = load_measurements(csv_file)
+
+    assert pd.isna(dataframe.iloc[0]["rain_accumulated"])
