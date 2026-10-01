@@ -16,7 +16,7 @@ A solução será organizada em camadas com foco em robustez, aquisição serial
 
 2. Aquisição e protocolo serial
    - O Raspberry lê mensagens do STM32 em intervalos configuráveis.
-   - Definição de protocolo de mensagens com timestamp, identificador do dispositivo e valores de temperatura, umidade e pressão.
+   - Definição de protocolo de mensagens com temperatura, umidade e chuva acumulada; timestamp e identificador são associados pelo Raspberry.
    - Validação de checksum, delimitadores e integridade das mensagens.
    - Tratamento de frames corrompidos ou incompletos.
 
@@ -31,7 +31,7 @@ A solução será organizada em camadas com foco em robustez, aquisição serial
    - Processamento em lotes para reduzir overhead.
 
 5. Visualização com Streamlit
-   - Dashboard de temperatura, umidade e pressão.
+   - Dashboard de temperatura, umidade e chuva acumulada.
    - Histórico e alertas para anomalias.
 
 6. Operação e monitoramento
@@ -80,7 +80,7 @@ Permitir que a estação receba, valide e normalize mensagens do STM32 pela port
 - Definir protocolo de comunicação serial entre STM32 e Raspberry.
 - Implementar leitura da porta serial em Python.
 - Validar checksum, delimitadores e integridade da mensagem.
-- Normalizar payload em objeto de leitura com temperatura, umidade e pressão.
+- Normalizar payload em objeto de leitura com temperatura, umidade e chuva acumulada (`RAIN`, em mm).
 - Criar testes unitários para leitura serial e falha de porta.
 - Registrar logs para perda de conexão e mensagens inválidas.
 
@@ -170,7 +170,7 @@ P1
 
 ### Status da Issue 4
 
-Planejada
+Em andamento
 
 ### Descrição da Issue 4
 
@@ -182,9 +182,9 @@ Centralizar os dados para histórico, análise e visualização remota.
 
 ### Critérios de aceitação da Issue 4
 
-- Há tabelas para armazenar medições com ID, timestamp, temperatura, umidade e pressão.
-- A sincronização faz retry em caso de falha temporária.
-- O Raspberry Pi prioriza gravação local e sincroniza depois.
+- Há tabelas para armazenar medições com ID, timestamp, temperatura, umidade e chuva acumulada.
+- A ingestão salva localmente antes de tentar sincronizar com Supabase.
+- Falhas de rede mantêm os dados no CSV; retry automático das pendências ainda está pendente.
 - Os dados enviados têm campo de status e origem.
 - Existe tratamento para dados duplicados ou incompletos.
 
@@ -205,7 +205,7 @@ Centralizar os dados para histórico, análise e visualização remota.
 | measured_at | timestamptz | Momento da leitura |
 | temperature | numeric | Temperatura |
 | humidity | numeric | Umidade |
-| pressure | numeric | Pressão |
+| rain_accumulated | numeric | Chuva acumulada em milímetros |
 | created_at | timestamptz | Momento do registro |
 | source | text | Origem da leitura |
 | status | text | Status da sincronização |
@@ -233,7 +233,7 @@ Disponibilizar indicadores e gráficos de monitoramento para o usuário.
 
 ### Critérios de aceitação da Issue 5
 
-- Dashboard mostra temperatura, umidade e pressão.
+- Dashboard mostra temperatura, umidade e chuva acumulada.
 - Existe visão de histórico temporal.
 - Há indicadores de última leitura e alertas de anomalia.
 - A interface funciona em rede local e pode ser expandida para acesso remoto.

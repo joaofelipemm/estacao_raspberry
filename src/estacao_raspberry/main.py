@@ -9,6 +9,7 @@ from .config import DEFAULT_SETTINGS
 from .sensor import SensorReading
 from .serial_reader import SerialReader
 from .storage import MeasurementStore
+from .supabase_sync import SupabaseSyncClient
 
 
 def main(
@@ -39,6 +40,20 @@ def main(
         reader.close()
 
     store.save(reading)
+
+    supabase_url = getattr(settings, "resolved_supabase_url", "")
+    supabase_key = getattr(settings, "resolved_supabase_key", "")
+    if supabase_url and supabase_key:
+        try:
+            client = SupabaseSyncClient(
+                url=supabase_url,
+                key=supabase_key,
+                device_id=getattr(settings, "device_id", "raspberry-pi"),
+            )
+            client.send_measurement(reading)
+            print("Leitura sincronizada com o Supabase.")
+        except Exception as exc:
+            print(f"Aviso: falha ao sincronizar com Supabase; leitura mantida no CSV: {exc}")
 
     print(f"Temperatura: {reading.temperature} C")
     print(f"Umidade: {reading.humidity} %")

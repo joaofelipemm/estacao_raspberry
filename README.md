@@ -61,6 +61,8 @@ ALTER COLUMN pressure DROP NOT NULL;
 
 O protocolo serial espera `TEMP`, `HUM` e `RAIN`, por exemplo: `<TEMP=23.4;HUM=58.1;RAIN=12.5>`. CSVs antigos são migrados preservando as leituras; os valores históricos de pressão ficam sem valor de chuva.
 
+Ao executar `python -m estacao_raspberry.main`, cada leitura é gravada localmente antes da tentativa de envio ao Supabase. Se o envio falhar, a leitura permanece no CSV e um aviso é exibido; o reenvio automático das pendências ainda não está implementado.
+
 Depois:
 
 ```bash
