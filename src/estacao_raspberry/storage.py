@@ -17,6 +17,7 @@ class MeasurementStore:
     CSV_COLUMNS = [
         "measurement_id",
         "timestamp",
+        "device_id",
         "temperature",
         "humidity",
         "rain_accumulated",
@@ -49,6 +50,7 @@ class MeasurementStore:
                     {
                         "measurement_id": row.get("measurement_id") or str(uuid4()),
                         "timestamp": row.get("timestamp", ""),
+                        "device_id": row.get("device_id", ""),
                         "temperature": row.get("temperature", ""),
                         "humidity": row.get("humidity", ""),
                         "rain_accumulated": rain_accumulated,
@@ -68,10 +70,15 @@ class MeasurementStore:
     def save(self, reading: SensorReading) -> str:
         """Salva uma leitura pendente e retorna seu identificador estável."""
         measurement_id = str(uuid4())
-        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        timestamp = (
+            reading.measured_at.isoformat(timespec="seconds")
+            if reading.measured_at is not None
+            else datetime.now(timezone.utc).isoformat(timespec="seconds")
+        )
         row = [
             measurement_id,
             timestamp,
+            reading.device_id or "",
             reading.temperature,
             reading.humidity,
             reading.rain_accumulated,
@@ -95,6 +102,7 @@ class MeasurementStore:
                     {
                         "measurement_id": row.get("measurement_id"),
                         "timestamp": row.get("timestamp"),
+                        "device_id": row.get("device_id"),
                         "temperature": self._to_float(row.get("temperature")),
                         "humidity": self._to_float(row.get("humidity")),
                         "rain_accumulated": self._to_float(row.get("rain_accumulated")),

@@ -1,5 +1,6 @@
 from estacao_raspberry.sensor import SensorReading
 from estacao_raspberry.storage import MeasurementStore
+from datetime import datetime
 
 
 def test_measurement_store_writes_csv(tmp_path) -> None:
@@ -41,3 +42,21 @@ def test_measurement_store_migrates_legacy_pressure_csv_without_relabeling_it(tm
     records = store.read_all()
     assert records[0]["rain_accumulated"] is None
     assert records[1]["rain_accumulated"] == 2.5
+
+
+def test_measurement_store_preserves_device_id_and_device_timestamp(tmp_path) -> None:
+    file_path = tmp_path / "measurements.csv"
+    store = MeasurementStore(file_path)
+    reading = SensorReading(
+        temperature=23.66,
+        humidity=77.06,
+        rain_accumulated=0.4,
+        measured_at=datetime.fromisoformat("2026-10-05T16:15:57+00:00"),
+        device_id="est_01",
+    )
+
+    store.save(reading)
+
+    saved = MeasurementStore(file_path).read_all()[0]
+    assert saved["timestamp"] == "2026-10-05T16:15:57+00:00"
+    assert saved["device_id"] == "est_01"

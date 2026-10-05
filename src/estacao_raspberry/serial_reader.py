@@ -3,9 +3,37 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Callable
 
 from .sensor import SensorReading
+
+
+def list_serial_ports() -> list[str]:
+    """Retorna as portas seriais disponíveis no sistema."""
+    try:
+        from serial.tools import list_ports
+    except ImportError as exc:  # pragma: no cover - depends on environment.
+        raise RuntimeError(
+            "A biblioteca pyserial não está instalada. Instale com pip install pyserial."
+        ) from exc
+    return [port.device for port in list_ports.comports()]
+
+
+def resolve_serial_port(port: str | None = None) -> str:
+    """Usa a porta informada ou seleciona a única porta serial disponível."""
+    if port:
+        return port
+
+    ports = list_serial_ports()
+    if not ports:
+        raise RuntimeError("Nenhuma porta serial encontrada. Conecte o dispositivo USB e tente novamente.")
+    if len(ports) > 1:
+        available = ", ".join(ports)
+        raise RuntimeError(
+            f"Mais de uma porta serial encontrada ({available}); informe qual porta usar."
+        )
+    return ports[0]
 
 
 @dataclass(frozen=True)
@@ -36,6 +64,28 @@ def parse_serial_payload(
 
     if not message:
         raise ValueError("Formato inválido: mensagem serial vazia.")
+
+    if message.upper().startswith("DADOS:"):
+        fields = [field.strip() for field in message.split(":", 1)[1].split(";")]
+        if len(fields) != 6 or not fields[0]:
+            raise ValueError(
+                "Formato inválido: DADOS deve conter dispositivo, data, hora, temperatura, umidade e chuva."
+            )
+        try:
+            measured_at = datetime.strptime(
+                f"{fields[1]} {fields[2]}", "%d/%m/%Y %H:%M:%S"
+            ).astimezone()
+            temperature, humidity, rain_accumulated = map(float, fields[3:])
+        except ValueError as exc:
+            raise ValueError("Formato inválido: valores incorretos no registro DADOS.") from exc
+
+        return SensorReading(
+            temperature=temperature,
+            humidity=humidity,
+            rain_accumulated=rain_accumulated,
+            measured_at=measured_at,
+            device_id=fields[0],
+        )
 
     if message.startswith(protocol.start_marker) and message.endswith(protocol.end_marker):
         message = message[1:-1]
@@ -76,7 +126,7 @@ class SerialReader:
     def __init__(
         self,
         port: str,
-        baudrate: int = 9600,
+        baudrate: int = 115200,
         timeout: float = 1.0,
         protocol: SerialProtocol | None = None,
         serial_factory: Callable[..., Any] | None = None,
@@ -106,7 +156,7 @@ class SerialReader:
         return self._serial
 
     def read_measurement(self) -> SensorReading:
-        """Lê uma linha da porta serial e a converte em leitura do sistema."""
+        """Lê uma medição DADOS ou um quadro legado pela porta serial."""
         serial_port = self.open()
         while True:
             raw = serial_port.readline()
@@ -115,7 +165,16 @@ class SerialReader:
             payload = raw.decode("utf-8", errors="replace").strip()
             if not payload:
                 continue
-            return parse_serial_payload(payload, protocol=self.protocol)
+            if not (
+                payload.upper().startswith("DADOS:")
+                or payload.startswith(self.protocol.start_marker)
+                or "TEMP=" in payload.upper()
+            ):
+                continue
+            try:
+                return parse_serial_payload(payload, protocol=self.protocol)
+            except ValueError as exc:
+                print(f"Aviso: mensagem serial inválida descartada: {exc}")
 
     def close(self) -> None:
         if self._serial is not None:

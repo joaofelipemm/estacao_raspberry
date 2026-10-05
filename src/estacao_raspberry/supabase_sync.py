@@ -64,7 +64,7 @@ class SupabaseSyncClient:
 
         return {
             "sync_id": sync_id or str(uuid4()),
-            "device_id": self.device_id,
+            "device_id": reading.device_id or self.device_id,
             "measured_at": measurement_time.astimezone(timezone.utc).isoformat(),
             "temperature": reading.temperature,
             "humidity": reading.humidity,
@@ -148,10 +148,17 @@ def sync_measurements_from_csv(
         except ValueError:
             measured_at = None
 
+        stored_device_id = row.get("device_id")
+        measurement_device_id = (
+            stored_device_id
+            if isinstance(stored_device_id, str) and stored_device_id
+            else device_id
+        )
         reading = SensorReading(
             temperature=row["temperature"],
             humidity=row["humidity"],
             rain_accumulated=row["rain_accumulated"],
+            device_id=measurement_device_id,
         )
         for attempt in range(max_attempts):
             try:

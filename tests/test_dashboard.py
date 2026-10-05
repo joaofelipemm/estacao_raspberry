@@ -24,7 +24,8 @@ def test_get_supabase_settings_prefers_publishable_key(monkeypatch) -> None:
     assert get_supabase_settings() == ("https://example.supabase.co", "publishable-test-key")
 
 
-def test_load_measurements_reads_csv(tmp_path: Path) -> None:
+def test_load_measurements_reads_csv(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
     csv_file = tmp_path / "measurements.csv"
     csv_file.write_text(
         "timestamp,temperature,humidity,rain_accumulated\n"

@@ -49,7 +49,7 @@ SUPABASE_ANON_KEY=sua_chave_anonima
 DEVICE_ID=raspberry-pi
 ```
 
-A tabela `measurements` deve ter a coluna `rain_accumulated` (`double precision`), em milímetros. Para atualizar uma tabela existente no Supabase, execute no SQL Editor:
+A aplicação espera uma tabela `public.measurements` com `sync_id` único para que o retry não duplique leituras. Para criar a tabela e permitir que o dashboard consulte as medições, execute o arquivo [`supabase_measurements.sql`](supabase_measurements.sql) no SQL Editor do Supabase. Se já houver uma tabela antiga, preserve os dados e aplique somente as alterações necessárias:
 
 ```sql
 ALTER TABLE public.measurements
@@ -68,6 +68,8 @@ ALTER COLUMN pressure DROP NOT NULL;
 O protocolo serial espera `TEMP`, `HUM` e `RAIN`, por exemplo: `<TEMP=23.4;HUM=58.1;RAIN=12.5>`. CSVs antigos são migrados preservando as leituras; os valores históricos de pressão ficam sem valor de chuva.
 
 Ao executar `python -m estacao_raspberry.main`, cada leitura é gravada localmente antes da sincronização. O CSV mantém um ID estável e o estado `pending`/`synced`; o Raspberry tenta cada pendência até três vezes com espera exponencial. Falhas mantêm a leitura pendente para a próxima execução. A coluna `sync_id` com índice único no Supabase torna seguro repetir uma requisição cuja resposta tenha se perdido.
+
+O coletor permanece escutando a porta serial até ser interrompido com `Ctrl+C`. Se houver uma única porta serial disponível, ela é detectada automaticamente; com várias portas, informe a desejada. O padrão é 115200 baud. São aceitos quadros legados como `<TEMP=23.4;HUM=58.1;RAIN=12.5>` e registros STM32 no formato `DADOS:est_01;05/10/2026;16:15:57;23.66;77.06;0.4` (dispositivo, data, hora, temperatura, umidade e chuva). Cada leitura válida é acrescentada em `data/measurements.csv`, preservando o identificador e o timestamp do dispositivo quando informados.
 
 Depois:
 

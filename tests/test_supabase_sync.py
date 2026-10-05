@@ -42,14 +42,22 @@ def test_supabase_client_sends_measurement_payload(monkeypatch) -> None:
         key="service-key",
         device_id="rpi-test-01",
     )
-    reading = SensorReading(temperature=22.5, humidity=60.0, rain_accumulated=12.4)
+    reading = SensorReading(
+        temperature=22.5,
+        humidity=60.0,
+        rain_accumulated=12.4,
+        device_id="est_01",
+    )
 
-    sent = client.send_measurement(reading, measured_at=datetime(2026, 1, 1, 12, 0, 0))
+    sent = client.send_measurement(
+        reading,
+        measured_at=datetime(2026, 1, 1, 12, 0, 0),
+    )
 
     assert sent is True
     assert len(fake_session.calls) == 1
     payload = fake_session.calls[0]["json"]
-    assert payload["device_id"] == "rpi-test-01"
+    assert payload["device_id"] == "est_01"
     assert payload["temperature"] == 22.5
     assert payload["humidity"] == 60.0
     assert payload["rain_accumulated"] == 12.4

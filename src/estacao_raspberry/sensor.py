@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 
 @dataclass
@@ -12,6 +13,8 @@ class SensorReading:
     temperature: float | None = None
     humidity: float | None = None
     rain_accumulated: float | None = None
+    measured_at: datetime | None = None
+    device_id: str | None = None
 
 
 class Sensor:
