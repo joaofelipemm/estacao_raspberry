@@ -10,8 +10,9 @@ def test_get_supabase_settings_accepts_supabase_key_alias(monkeypatch) -> None:
     monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
     monkeypatch.delenv("SUPABASE_PUBLISHABLE_KEY", raising=False)
     monkeypatch.delenv("SUPABASE_SECRET_KEY", raising=False)
+    monkeypatch.delenv("SUPABASE_KEY", raising=False)
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
-    monkeypatch.setenv("SUPABASE_KEY", "test-key")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "test-key")
 
     assert get_supabase_settings() == ("https://example.supabase.co", "test-key")
 
@@ -22,6 +23,39 @@ def test_get_supabase_settings_prefers_publishable_key(monkeypatch) -> None:
     monkeypatch.setenv("SUPABASE_ANON_KEY", "old-anon-key")
 
     assert get_supabase_settings() == ("https://example.supabase.co", "publishable-test-key")
+
+
+def test_get_supabase_settings_reads_streamlit_secrets(monkeypatch) -> None:
+    for name in (
+        "SUPABASE_URL",
+        "SUPABASE_PUBLISHABLE_KEY",
+        "SUPABASE_ANON_KEY",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "SUPABASE_SECRET_KEY",
+        "SUPABASE_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    secrets = {
+        "SUPABASE_URL": "https://secrets.supabase.co",
+        "SUPABASE_PUBLISHABLE_KEY": "publishable-secret-value",
+    }
+    monkeypatch.setattr("dashboard._get_streamlit_secret", secrets.get)
+
+    assert get_supabase_settings() == (
+        "https://secrets.supabase.co",
+        "publishable-secret-value",
+    )
+
+
+def test_get_supabase_settings_does_not_use_privileged_keys(monkeypatch) -> None:
+    for name in ("SUPABASE_PUBLISHABLE_KEY", "SUPABASE_ANON_KEY", "SUPABASE_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "privileged-key")
+    monkeypatch.setenv("SUPABASE_SECRET_KEY", "secret-key")
+    monkeypatch.setattr("dashboard._get_streamlit_secret", lambda name: None)
+
+    assert get_supabase_settings() == ("https://example.supabase.co", None)
 
 
 def test_load_measurements_reads_csv(tmp_path: Path, monkeypatch) -> None:

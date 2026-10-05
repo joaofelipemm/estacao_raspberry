@@ -45,9 +45,11 @@ Exemplo:
 
 ```bash
 SUPABASE_URL=https://seu-projeto.supabase.co
-SUPABASE_ANON_KEY=sua_chave_anonima
+SUPABASE_PUBLISHABLE_KEY=sua_chave_publica
 DEVICE_ID=raspberry-pi
 ```
+
+Para publicar no Streamlit Community Cloud, envie primeiro as alterações para o GitHub e configure `SUPABASE_URL` e `SUPABASE_PUBLISHABLE_KEY` em **App settings > Secrets**. A chave pública (ou `SUPABASE_ANON_KEY`) é usada apenas para leitura pelo dashboard; não coloque `SUPABASE_SECRET_KEY` nem `SUPABASE_SERVICE_ROLE_KEY` nos Secrets do dashboard.
 
 A aplicação espera uma tabela `public.measurements` com `sync_id` único para que o retry não duplique leituras. Para criar a tabela e permitir que o dashboard consulte as medições, execute o arquivo [`supabase_measurements.sql`](supabase_measurements.sql) no SQL Editor do Supabase. Se já houver uma tabela antiga, preserve os dados e aplique somente as alterações necessárias:
 

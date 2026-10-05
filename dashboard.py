@@ -7,6 +7,7 @@ import pandas as pd
 import requests
 import streamlit as st
 from dotenv import load_dotenv
+from streamlit.errors import StreamlitSecretNotFoundError
 
 
 load_dotenv()
@@ -19,16 +20,24 @@ st.set_page_config(page_title="Estação Raspberry", page_icon="🌡️", layout
 
 
 def get_supabase_settings() -> tuple[str | None, str | None]:
-    """Lê as credenciais do Supabase a partir das variáveis de ambiente."""
-    url = os.getenv("SUPABASE_URL")
+    """Lê credenciais públicas do ambiente ou dos Secrets do Streamlit."""
+    url = os.getenv("SUPABASE_URL") or _get_streamlit_secret("SUPABASE_URL")
     key = (
         os.getenv("SUPABASE_PUBLISHABLE_KEY")
+        or _get_streamlit_secret("SUPABASE_PUBLISHABLE_KEY")
         or os.getenv("SUPABASE_ANON_KEY")
-        or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        or os.getenv("SUPABASE_KEY")
-        or os.getenv("SUPABASE_SECRET_KEY")
+        or _get_streamlit_secret("SUPABASE_ANON_KEY")
     )
     return url, key
+
+
+def _get_streamlit_secret(name: str) -> str | None:
+    """Retorna um Secret, sem falhar quando o app local não tem secrets.toml."""
+    try:
+        value = st.secrets.get(name)
+    except (KeyError, StreamlitSecretNotFoundError):
+        return None
+    return str(value) if value else None
 
 
 def fetch_supabase_measurements() -> pd.DataFrame:
