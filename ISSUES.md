@@ -15,10 +15,10 @@ A solução será organizada em camadas com foco em robustez, aquisição serial
    - A Raspberry não precisa ler sensores físicos diretamente; ela recebe os dados prontos.
 
 2. Aquisição e protocolo serial
-   - O Raspberry lê mensagens do STM32 em intervalos configuráveis.
-   - Definição de protocolo de mensagens com temperatura, umidade e chuva acumulada; timestamp e identificador são associados pelo Raspberry.
-   - Validação de checksum, delimitadores e integridade das mensagens.
-   - Tratamento de frames corrompidos ou incompletos.
+   - O coletor escuta continuamente a porta serial do STM32; o intervalo de transmissão é definido pelo dispositivo.
+   - O protocolo observado envia dispositivo, data, hora, temperatura, umidade e chuva acumulada; o Raspberry normaliza os campos.
+   - Mensagens inválidas/status são ignoradas; a validação de checksum depende da especificação final do firmware.
+   - O fluxo foi testado no notebook Windows pela COM11 a 115200 baud; falta validar operação no Raspberry Pi.
 
 3. Persistência local
    - Armazenamento em arquivo CSV/JSON para tolerância a falhas de rede.
@@ -42,9 +42,11 @@ A solução será organizada em camadas com foco em robustez, aquisição serial
 
 ## Status geral
 
-- Sprint atual: foco em sensor real + persistência + sincronização
-- Prioridade principal: P1
-- Caminho recomendado: sensor -> persistência local -> Supabase -> Streamlit -> automação
+- Sprint atual: concluir publicação do dashboard no Streamlit Community Cloud
+- Prioridade atual: concluir deploy do dashboard (P2); validar operação no Raspberry Pi permanece como trabalho P1.
+- Fluxo validado no notebook: STM32 -> USB/serial (COM11, 115200 baud) -> CSV local -> Supabase -> dashboard Streamlit local.
+- O dashboard consulta medições reais no Supabase; a publicação pública no Community Cloud ainda está pendente de configurar Secrets e concluir o deploy.
+- Commits enviados para `main`: `0c8e575` (integração serial/CSV/Supabase/dashboard) e `e3811f9` (preparação de Secrets e dependências do Streamlit Cloud).
 
 ---
 
@@ -56,7 +58,7 @@ P1
 
 ### Status da Issue 1
 
-Em andamento
+Parcialmente concluída
 
 ### Descrição da Issue 1
 
@@ -77,12 +79,13 @@ Permitir que a estação receba, valide e normalize mensagens do STM32 pela port
 
 ### Tarefas sugeridas da Issue 1
 
-- Definir protocolo de comunicação serial entre STM32 e Raspberry.
-- Implementar leitura da porta serial em Python.
-- Validar checksum, delimitadores e integridade da mensagem.
-- Normalizar payload em objeto de leitura com temperatura, umidade e chuva acumulada (`RAIN`, em mm).
-- Criar testes unitários para leitura serial e falha de porta.
-- Registrar logs para perda de conexão e mensagens inválidas.
+- [x] Implementar leitura serial em Python, detecção automática quando há uma única porta e padrão de 115200 baud.
+- [x] Interpretar o registro real observado (`DADOS:<device_id>;<data>;<hora>;<temperatura>;<umidade>;<chuva>`) e manter suporte ao protocolo legado.
+- [x] Ignorar mensagens de status e descartar quadros inválidos sem parar o coletor.
+- [x] Testar comunicação real no notebook pela COM11 e capturar medições.
+- [x] Criar testes automatizados de parser e leitor.
+- [ ] Completar validação de checksum/integridade conforme o protocolo final do firmware.
+- [ ] Validar a operação no Raspberry Pi, incluindo recuperação após desconexão ou ausência de dados.
 
 ### Observação de arquitetura da Issue 1
 
@@ -98,7 +101,7 @@ P1
 
 ### Status da Issue 2
 
-Em andamento
+Parcialmente concluída
 
 ### Descrição da Issue 2
 
@@ -111,18 +114,18 @@ Salvar leituras em arquivo local de forma confiável, com timestamp e sem perda 
 ### Critérios de aceitação da Issue 2
 
 - O diretório `data` e os arquivos são criados automaticamente.
-- Cada leitura inclui timestamp em UTC.
+- Cada leitura inclui timestamp com fuso horário; o Supabase armazena o horário normalizado em UTC.
 - O armazenamento local é consistente em CSV ou JSON.
 - A aplicação continua funcionando mesmo quando o arquivo ainda não existe.
 - Há suporte para reprocessamento de arquivos locais.
 
 ### Tarefas sugeridas da Issue 2
 
-- Definir estrutura do registro de leitura.
-- Implementar gravação em CSV/JSON local.
-- Adicionar rotina de criação do diretório e arquivos.
-- Criar testes de persistência e de leitura de arquivo.
-- Planejar rotação de arquivos ou retenção de dados.
+- [x] Definir registro CSV com ID estável, timestamp, device_id, valores ambientais e estado de sincronização.
+- [x] Criar diretório/arquivo automaticamente e migrar CSVs antigos preservando dados.
+- [x] Salvar localmente antes da sincronização e manter pendências em falhas.
+- [x] Criar testes de persistência, migração e leitura do CSV.
+- [ ] Definir política de retenção e rotação do arquivo local.
 
 ---
 
@@ -134,7 +137,7 @@ P2
 
 ### Status da Issue 3
 
-Planejada
+Parcialmente concluída
 
 ### Descrição da Issue 3
 
@@ -154,11 +157,11 @@ Tornar a estação útil em linha de comando para uso no Raspberry Pi.
 
 ### Tarefas sugeridas da Issue 3
 
-- Definir argumentos de execução: sensor, intervalo, modo, arquivo de saída.
-- Implementar leitura única e loop contínuo.
-- Integrar a camada de `Settings` ao CLI.
-- Documentar uso no README.
-- Adicionar testes de comandos e parâmetros.
+- [x] Implementar execução contínua, mensagens de status e encerramento com `Ctrl+C`.
+- [x] Permitir configurar porta, baudrate, timeout e caminho CSV pela função de entrada.
+- [x] Documentar o uso no README.
+- [ ] Adicionar CLI com `argparse`, modo de leitura única e intervalo configurável.
+- [ ] Adicionar testes dos argumentos de linha de comando.
 
 ---
 
@@ -170,7 +173,7 @@ P1
 
 ### Status da Issue 4
 
-Em andamento
+Concluída para o fluxo atual
 
 ### Descrição da Issue 4
 
@@ -192,23 +195,23 @@ Centralizar os dados para histórico, análise e visualização remota.
 
 ### Tarefas sugeridas da Issue 4
 
-- Definir schema da tabela `measurements`.
-- Implementar cliente Python para Supabase.
-- Ampliar retries para um worker periódico independente da leitura serial.
-- Adicionar filas ou lotes de envio.
-- Validar integração com ambiente de desenvolvimento.
+- [x] Criar o schema `public.measurements` com `sync_id` único, RLS e leitura pública para o dashboard (`supabase_measurements.sql`).
+- [x] Implementar cliente REST, sincronização após persistência local, retry com backoff e retomada de pendências.
+- [x] Validar envio real e confirmar as medições pela API; CSV atualizado para `synced`.
+- [x] Preservar o identificador do dispositivo e o horário enviados pelo STM32.
+- [ ] Avaliar worker periódico independente e processamento em lote se o volume justificar.
 
 ### Estrutura sugerida da tabela
 
 | Campo | Tipo | Descrição |
 | --- | --- | --- |
-| id | uuid / serial | Identificador da medição |
-| device_id | text | Identificador do Raspberry |
+| id | bigint identity | Identificador interno da medição |
+| sync_id | uuid unique | Identificador estável usado para evitar duplicatas |
+| device_id | text | Identificador do dispositivo que enviou a leitura |
 | measured_at | timestamptz | Momento da leitura |
-| temperature | numeric | Temperatura |
-| humidity | numeric | Umidade |
-| rain_accumulated | numeric | Chuva acumulada em milímetros |
-| created_at | timestamptz | Momento do registro |
+| temperature | double precision | Temperatura |
+| humidity | double precision | Umidade |
+| rain_accumulated | double precision | Chuva acumulada em milímetros |
 | source | text | Origem da leitura |
 | status | text | Status da sincronização |
 | metadata | jsonb | Dados extras opcionais |
@@ -223,7 +226,7 @@ P2
 
 ### Status da Issue 5
 
-Planejada
+Parcialmente concluída
 
 ### Descrição da Issue 5
 
@@ -242,11 +245,13 @@ Disponibilizar indicadores e gráficos de monitoramento para o usuário.
 
 ### Tarefas sugeridas da Issue 5
 
-- Definir página principal e métricas.
-- Consultar dados do Supabase.
-- Implementar filtros por período e dispositivo.
-- Exibir alertas visuais para valores fora do esperado.
-- Documentar como abrir o dashboard localmente.
+- [x] Implementar página com métricas, última leitura, gráficos e histórico.
+- [x] Consultar Supabase primeiro e usar CSV local como fallback.
+- [x] Testar o dashboard local no navegador com dados reais do Supabase.
+- [x] Preparar leitura de Streamlit Secrets, ignorar `secrets.toml` local e documentar configuração segura.
+- [ ] Configurar `SUPABASE_URL` e `SUPABASE_PUBLISHABLE_KEY` (ou `SUPABASE_ANON_KEY`) em **App settings > Secrets** no Community Cloud.
+- [ ] Publicar `dashboard.py` no Streamlit Community Cloud e validar a URL pública.
+- [ ] Implementar filtros por período/dispositivo e alertas de anomalia.
 
 ---
 
@@ -292,7 +297,7 @@ P2
 
 ### Status da Issue 7
 
-Planejada
+Parcialmente concluída
 
 ### Descrição da Issue 7
 
@@ -310,10 +315,11 @@ Aumentar confiabilidade e preparar o código para evoluir com segurança.
 
 ### Tarefas sugeridas da Issue 7
 
-- Adicionar testes para casos de erro e falha de rede.
-- Configurar `ruff` ou equivalente para lint.
-- Rodar testes em CI em cada mudança.
-- Adicionar cobertura para módulos de storage e sincronização.
+- [x] Adicionar testes de parser, armazenamento, falhas/retries do Supabase e configuração do dashboard.
+- [x] Executar a suíte completa; 31 testes passaram antes do último push.
+- [ ] Configurar lint com `ruff` ou equivalente.
+- [ ] Executar testes automaticamente em CI.
+- [ ] Medir cobertura e definir uma meta.
 
 ---
 
@@ -325,7 +331,7 @@ P3
 
 ### Status da Issue 8
 
-Planejada
+Parcialmente concluída
 
 ### Descrição da Issue 8
 
@@ -344,24 +350,23 @@ Preparar a solução para uso em produção com escalabilidade e robustez.
 
 ### Tarefas sugeridas da Issue 8
 
-- Separar ambientes de desenvolvimento, teste e produção.
-- Definir `env` variables para tokens, endpoints e intervalos.
-- Adicionar backoff para sincronização com Supabase.
-- Criar estratégia de retenção/limpeza de arquivos locais.
-- Preparar documentação de manutenção para Raspberry Pi.
+- [x] Manter endpoints e credenciais em variáveis de ambiente/Secrets; `.env` e `secrets.toml` ficam fora do Git.
+- [x] Restringir o dashboard às chaves públicas do Supabase e documentar que chaves `SECRET`/`SERVICE_ROLE` não devem ser usadas nele.
+- [x] Implementar retry com backoff exponencial para sincronização.
+- [ ] Separar formalmente ambientes de desenvolvimento, teste e produção.
+- [ ] Definir retenção/backup local e documentação de operação/manutenção do Raspberry Pi.
 
 ---
 
 ## Priorização final
 
-1. Issue 1 - leitura serial do STM32 (P1)
-2. Issue 2 - persistência local (P1)
-3. Issue 4 - sincronização com Supabase (P1)
-4. Issue 7 - qualidade e testes (P2)
-5. Issue 3 - CLI e configuração da ingestão serial (P2)
-6. Issue 5 - dashboard Streamlit (P2)
-7. Issue 6 - automação e logs (P2)
-8. Issue 8 - boas práticas de produção (P3)
+1. Issue 5 - configurar Secrets e concluir deploy público do dashboard (P2)
+2. Issue 1 - validar operação no Raspberry Pi e fechar validação do protocolo (P1)
+3. Issue 2 - definir retenção e rotação do CSV (P1)
+4. Issue 7 - configurar lint e CI (P2)
+5. Issue 3 - concluir CLI com argparse e intervalo configurável (P2)
+6. Issue 6 - automação e logs estruturados no Raspberry Pi (P2)
+7. Issue 8 - boas práticas de operação em produção (P3)
 
 ---
 
