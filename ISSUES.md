@@ -42,13 +42,13 @@ A solução será organizada em camadas com foco em robustez, aquisição serial
 
 ## Status geral
 
-- Sprint atual: diagnosticar a consulta ao Supabase no dashboard publicado
-- Prioridade atual: validar a integração do dashboard com Supabase (P2); validar operação no Raspberry Pi permanece como trabalho P1.
+- Sprint atual: retomar e validar a atualização das medições no dashboard publicado
+- Prioridade atual: confirmar coleta e sincronização de dados recentes (P1); validar acesso público e operação no Raspberry Pi.
 - Fluxo validado no notebook: STM32 -> USB/serial (COM11, 115200 baud) -> CSV local -> Supabase -> dashboard Streamlit local.
-- O dashboard local consultou medições reais no Supabase. O app foi publicado no Community Cloud e abre, mas não apresenta leituras; a validação da consulta remota permanece pendente.
-- O app publicado mostra que está configurado para usar Supabase; o usuário confirmou os nomes dos Secrets e que apontam para o projeto esperado.
-- O dashboard agora diferencia falhas HTTP/rede de consultas sem leituras, sem exibir credenciais; essa melhoria depende do deploy do commit atual para revelar o diagnóstico do Cloud.
-- Commits enviados para `main`: `0c8e575` (integração serial/CSV/Supabase/dashboard), `e3811f9` (preparação de Secrets e dependências do Streamlit Cloud) e `32a093f` (atualização anterior do progresso).
+- O dashboard está publicado no Community Cloud com Python 3.12. A consulta remota ao Supabase foi confirmada: o painel exibiu 46 medições e a última leitura disponível era de `2026-10-05T20:40:58+00:00` (20,64 °C, 74,89% de umidade e 1,20 mm de chuva).
+- Os Secrets estão configurados e o usuário confirmou que apontam para o projeto esperado. O commit `4912257` também adicionou mensagens de diagnóstico seguras para falhas HTTP/rede; não houve erro de consulta durante a validação após o deploy.
+- A conexão entre Cloud e Supabase está validada; falta confirmar a chegada de uma nova medição, pois o dado mais recente exibido está desatualizado em relação à validação de `2026-10-24`.
+- Commits enviados para `main`: `0c8e575` (integração serial/CSV/Supabase/dashboard), `e3811f9` (preparação de Secrets e dependências do Streamlit Cloud), `32a093f` (progresso anterior) e `4912257` (diagnóstico da consulta remota).
 
 ---
 
@@ -201,6 +201,7 @@ Centralizar os dados para histórico, análise e visualização remota.
 - [x] Implementar cliente REST, sincronização após persistência local, retry com backoff e retomada de pendências.
 - [x] Validar envio real e confirmar as medições pela API; CSV atualizado para `synced`.
 - [x] Preservar o identificador do dispositivo e o horário enviados pelo STM32.
+- [ ] Confirmar coleta contínua e sincronização de uma nova leitura até o Supabase.
 - [ ] Avaliar worker periódico independente e processamento em lote se o volume justificar.
 
 ### Estrutura sugerida da tabela
@@ -254,7 +255,8 @@ Disponibilizar indicadores e gráficos de monitoramento para o usuário.
 - [x] Configurar `SUPABASE_URL` e `SUPABASE_PUBLISHABLE_KEY` (ou `SUPABASE_ANON_KEY`) em **App settings > Secrets** no Community Cloud.
 - [x] Publicar o dashboard no Streamlit Community Cloud com Python 3.12 e confirmar que o app abre.
 - [x] Exibir diagnóstico seguro quando a consulta ao Supabase falhar, incluindo o status HTTP quando disponível.
-- [ ] Confirmar no Cloud que a consulta retorna leituras; após o deploy do diagnóstico, corrigir a causa indicada ou verificar se `public.measurements` está sem registros.
+- [x] Confirmar no Cloud que a consulta retorna medições existentes em `public.measurements`.
+- [ ] Confirmar que uma nova medição é coletada e sincronizada; o registro mais recente exibido no Cloud é de `2026-10-05T20:40:58+00:00`.
 - [ ] Confirmar acesso ao dashboard como visitante sem autenticação.
 - [ ] Implementar filtros por período/dispositivo e alertas de anomalia.
 
@@ -365,7 +367,7 @@ Preparar a solução para uso em produção com escalabilidade e robustez.
 
 ## Priorização final
 
-1. Issue 5 - configurar Secrets e concluir deploy público do dashboard (P2)
+1. Issues 4 e 5 - confirmar a chegada de leituras recentes ao dashboard (P1)
 2. Issue 1 - validar operação no Raspberry Pi e fechar validação do protocolo (P1)
 3. Issue 2 - definir retenção e rotação do CSV (P1)
 4. Issue 7 - configurar lint e CI (P2)
