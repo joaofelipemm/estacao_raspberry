@@ -10,6 +10,7 @@ from dashboard import (
     get_supabase_settings,
     load_measurements,
     prepare_daily_history,
+    prepare_latest_day_measurements,
     prepare_monthly_rainfall,
 )
 
@@ -19,6 +20,28 @@ def test_format_metric_delta_compares_with_previous_reading() -> None:
     assert format_metric_delta(58.0, 60.0, "%") == "-2.00 %"
     assert format_metric_delta(1.2, None, "mm") is None
     assert format_metric_delta(float("nan"), 1.0, "mm") is None
+
+
+def test_prepare_latest_day_measurements_keeps_only_latest_date() -> None:
+    measurements = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2026-10-23T23:55:00+00:00",
+                    "2026-10-24T00:00:00+00:00",
+                    "2026-10-24T23:55:00+00:00",
+                ]
+            ),
+            "temperature": [20.0, 21.0, 22.0],
+            "humidity": [55.0, 60.0, 65.0],
+        }
+    )
+
+    latest_day = prepare_latest_day_measurements(measurements)
+
+    assert len(latest_day) == 2
+    assert latest_day["temperature"].tolist() == [21.0, 22.0]
+    assert latest_day["humidity"].tolist() == [60.0, 65.0]
 
 
 def test_prepare_monthly_rainfall_calculates_daily_differences_and_resets() -> None:
@@ -159,28 +182,83 @@ def test_load_measurements_reads_supabase_when_configured(monkeypatch) -> None:
     class FakeResponse:
         status_code = 200
 
+        def __init__(self, rows: list[dict]) -> None:
+            self.rows = rows
+
         def raise_for_status(self) -> None:
             return None
 
         def json(self) -> list[dict]:
-            return [
-                {
-                    "measured_at": "2026-10-01T12:00:00+00:00",
-                    "temperature": 21.4,
-                    "humidity": 63.1,
-                    "rain_accumulated": 3.8,
-                }
-            ]
+            return self.rows
 
-    monkeypatch.setattr("dashboard.requests.get", lambda *args, **kwargs: FakeResponse())
+    rows = [
+        {
+            "measured_at": "2026-10-01T12:00:00+00:00",
+            "temperature": 21.4,
+            "humidity": 63.1,
+            "rain_accumulated": 3.8,
+        }
+    ]
+    calls = []
+
+    def fake_get(*args, **kwargs) -> FakeResponse:
+        calls.append(kwargs["params"])
+        offset = int(kwargs["params"]["offset"])
+        return FakeResponse(rows[offset : offset + 1000])
+
+    monkeypatch.setattr("dashboard.requests.get", fake_get)
 
     dataframe = load_measurements()
 
     assert isinstance(dataframe, pd.DataFrame)
     assert len(dataframe) == 1
+    assert len(calls) == 2
+    assert calls[0]["offset"] == "0"
+    assert calls[1]["offset"] == "1"
     assert dataframe.iloc[0]["temperature"] == 21.4
     assert dataframe.iloc[0]["humidity"] == 63.1
     assert dataframe.iloc[0]["rain_accumulated"] == 3.8
+
+
+def test_fetch_supabase_measurements_reads_more_than_ten_thousand_rows(monkeypatch) -> None:
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon-key")
+    rows = [
+        {
+            "measured_at": f"2026-10-{(index // 1440) + 1:02}T00:00:00+00:00",
+            "temperature": 20.0 + index / 10000,
+            "humidity": 60.0,
+            "rain_accumulated": 0.0,
+        }
+        for index in range(10_037)
+    ]
+    offsets = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def __init__(self, page: list[dict]) -> None:
+            self.page = page
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> list[dict]:
+            return self.page
+
+    def fake_get(*args, **kwargs) -> FakeResponse:
+        offset = int(kwargs["params"]["offset"])
+        offsets.append(offset)
+        return FakeResponse(rows[offset : offset + 777])
+
+    monkeypatch.setattr("dashboard.requests.get", fake_get)
+
+    dataframe = fetch_supabase_measurements()
+
+    assert len(dataframe) == len(rows)
+    assert offsets[0] == 0
+    assert offsets[-1] == len(rows)
+    assert len(offsets) > 10
 
 
 def test_fetch_supabase_measurements_reports_request_errors(monkeypatch) -> None:

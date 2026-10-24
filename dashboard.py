@@ -14,6 +14,8 @@ load_dotenv()
 
 
 DEFAULT_CSV_PATH = Path("data/measurements.csv")
+SUPABASE_PAGE_SIZE = 1000
+DASHBOARD_REFRESH_SECONDS = 60
 
 
 st.set_page_config(page_title="Estação Experimental", page_icon="🌡️", layout="wide")
@@ -41,7 +43,7 @@ def _get_streamlit_secret(name: str) -> str | None:
 
 
 def fetch_supabase_measurements() -> pd.DataFrame:
-    """Busca as últimas leituras no Supabase e converte para DataFrame."""
+    """Busca todas as leituras em páginas e converte para DataFrame."""
     url, key = get_supabase_settings()
     if not url or not key:
         return pd.DataFrame(columns=["timestamp", "temperature", "humidity", "rain_accumulated"])
@@ -52,16 +54,25 @@ def fetch_supabase_measurements() -> pd.DataFrame:
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
-    params = {
-        "select": "*",
-        "order": "measured_at.desc",
-        "limit": "100",
-    }
-
     try:
-        response = requests.get(endpoint, headers=headers, params=params, timeout=10)
-        response.raise_for_status()
-        payload = response.json()
+        payload = []
+        offset = 0
+        while True:
+            params = {
+                "select": "measured_at,temperature,humidity,rain_accumulated",
+                "order": "measured_at.asc,id.asc",
+                "limit": str(SUPABASE_PAGE_SIZE),
+                "offset": str(offset),
+            }
+            response = requests.get(endpoint, headers=headers, params=params, timeout=30)
+            response.raise_for_status()
+            page = response.json()
+            if not isinstance(page, list):
+                raise ValueError("A resposta da API do Supabase não é uma lista de medições.")
+            if not page:
+                break
+            payload.extend(page)
+            offset += len(page)
     except (requests.RequestException, ValueError) as exc:
         response = getattr(exc, "response", None)
         status_code = getattr(response, "status_code", None)
@@ -126,6 +137,18 @@ def format_metric_delta(current: float, previous: float | None, unit: str) -> st
     if previous is None or pd.isna(current) or pd.isna(previous):
         return None
     return f"{current - previous:+.2f} {unit}"
+
+
+def prepare_latest_day_measurements(measurements: pd.DataFrame) -> pd.DataFrame:
+    """Retorna as medições do dia mais recente disponível."""
+    data = measurements.copy()
+    data["timestamp"] = pd.to_datetime(data["timestamp"], errors="coerce")
+    data = data.dropna(subset=["timestamp"]).sort_values("timestamp")
+    if data.empty:
+        return data
+
+    latest_day = data["timestamp"].iloc[-1].date()
+    return data[data["timestamp"].dt.date == latest_day].reset_index(drop=True)
 
 
 def calculate_rainfall_changes(measurements: pd.DataFrame) -> pd.DataFrame:
@@ -230,7 +253,7 @@ def prepare_monthly_rainfall(measurements: pd.DataFrame) -> tuple[str, pd.DataFr
     return month_label, chart_data
 
 
-@st.fragment(run_every=60, key="dashboard")
+@st.fragment(run_every=DASHBOARD_REFRESH_SECONDS, key="dashboard")
 def render_dashboard() -> None:
     """Renderiza um painel executivo com indicadores e histórico de dados."""
     st.markdown(
@@ -297,7 +320,7 @@ def render_dashboard() -> None:
     )
     col_rain.metric("Chuva acumulada", rain_value, delta_rain)
 
-    chart_data = measurements.set_index("timestamp")
+    chart_data = prepare_latest_day_measurements(measurements).set_index("timestamp")
     st.subheader("Temperatura")
     st.line_chart(
         chart_data[["temperature"]],
