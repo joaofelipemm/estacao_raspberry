@@ -1,9 +1,84 @@
 from pathlib import Path
 
 import pandas as pd
+import pytest
 import requests
 
-from dashboard import fetch_supabase_measurements, get_supabase_settings, load_measurements
+from dashboard import (
+    fetch_supabase_measurements,
+    format_metric_delta,
+    get_supabase_settings,
+    load_measurements,
+    prepare_daily_history,
+    prepare_monthly_rainfall,
+)
+
+
+def test_format_metric_delta_compares_with_previous_reading() -> None:
+    assert format_metric_delta(23.5, 22.0, "°C") == "+1.50 °C"
+    assert format_metric_delta(58.0, 60.0, "%") == "-2.00 %"
+    assert format_metric_delta(1.2, None, "mm") is None
+    assert format_metric_delta(float("nan"), 1.0, "mm") is None
+
+
+def test_prepare_monthly_rainfall_calculates_daily_differences_and_resets() -> None:
+    measurements = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2026-09-30T23:59:00+00:00",
+                    "2026-10-01T00:00:00+00:00",
+                    "2026-10-01T12:00:00+00:00",
+                    "2026-10-02T00:00:00+00:00",
+                    "2026-10-02T12:00:00+00:00",
+                    "2026-10-03T00:00:00+00:00",
+                ]
+            ),
+            "rain_accumulated": [10.0, 10.2, 10.8, 11.1, 0.1, 0.3],
+        }
+    )
+
+    month, chart_data = prepare_monthly_rainfall(measurements)
+    daily_rainfall = chart_data.set_index("day")["rainfall"]
+
+    assert month == "outubro de 2026"
+    assert len(chart_data) == 31
+    assert daily_rainfall.loc[1] == pytest.approx(0.8)
+    assert daily_rainfall.loc[2] == pytest.approx(0.4)
+    assert daily_rainfall.loc[3] == pytest.approx(0.2)
+    assert pd.isna(daily_rainfall.loc[4])
+
+
+def test_prepare_daily_history_aggregates_sensor_values_and_monthly_rainfall() -> None:
+    measurements = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2026-09-30T23:59:00+00:00",
+                    "2026-10-01T00:00:00+00:00",
+                    "2026-10-01T12:00:00+00:00",
+                    "2026-10-02T00:00:00+00:00",
+                    "2026-10-02T12:00:00+00:00",
+                    "2026-10-03T00:00:00+00:00",
+                ]
+            ),
+            "temperature": [18.0, 19.0, 24.0, 20.0, 22.0, 17.0],
+            "humidity": [55.0, 60.0, 75.0, 62.0, 80.0, 58.0],
+            "rain_accumulated": [10.0, 10.2, 10.8, 11.1, 0.1, 0.3],
+        }
+    )
+
+    history = prepare_daily_history(measurements).set_index("date")
+
+    assert history.loc["01/10/2026", "temperature_max"] == 24.0
+    assert history.loc["01/10/2026", "temperature_min"] == 19.0
+    assert history.loc["01/10/2026", "humidity_max"] == 75.0
+    assert history.loc["01/10/2026", "humidity_min"] == 60.0
+    assert history.loc["01/10/2026", "daily_rainfall"] == pytest.approx(0.8)
+    assert history.loc["01/10/2026", "monthly_rainfall"] == pytest.approx(0.8)
+    assert history.loc["02/10/2026", "daily_rainfall"] == pytest.approx(0.4)
+    assert history.loc["02/10/2026", "monthly_rainfall"] == pytest.approx(1.2)
+    assert history.loc["03/10/2026", "monthly_rainfall"] == pytest.approx(1.4)
 
 
 def test_get_supabase_settings_accepts_supabase_key_alias(monkeypatch) -> None:

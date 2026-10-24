@@ -16,7 +16,7 @@ load_dotenv()
 DEFAULT_CSV_PATH = Path("data/measurements.csv")
 
 
-st.set_page_config(page_title="Estação Raspberry", page_icon="🌡️", layout="wide")
+st.set_page_config(page_title="Estação Experimental", page_icon="🌡️", layout="wide")
 
 
 def get_supabase_settings() -> tuple[str | None, str | None]:
@@ -121,6 +121,116 @@ def load_measurements(csv_path: str | Path = DEFAULT_CSV_PATH) -> pd.DataFrame:
     return dataframe
 
 
+def format_metric_delta(current: float, previous: float | None, unit: str) -> str | None:
+    """Formata a variação em relação à leitura imediatamente anterior."""
+    if previous is None or pd.isna(current) or pd.isna(previous):
+        return None
+    return f"{current - previous:+.2f} {unit}"
+
+
+def calculate_rainfall_changes(measurements: pd.DataFrame) -> pd.DataFrame:
+    """Calcula as variações do acumulador de chuva, incluindo reinicializações."""
+    data = measurements[["timestamp", "rain_accumulated"]].copy()
+    data["timestamp"] = pd.to_datetime(data["timestamp"], errors="coerce")
+    data["rain_accumulated"] = pd.to_numeric(data["rain_accumulated"], errors="coerce")
+    data = data.dropna(subset=["timestamp", "rain_accumulated"]).sort_values("timestamp")
+    changes = data["rain_accumulated"].diff()
+    data["rainfall_change"] = changes
+    reset = data["rainfall_change"] < 0
+    data.loc[reset, "rainfall_change"] = data.loc[reset, "rain_accumulated"]
+    return data
+
+
+def prepare_daily_history(measurements: pd.DataFrame) -> pd.DataFrame:
+    """Resume máximas, mínimas e chuva diária/mensal para cada dia com leituras."""
+    columns = [
+        "date",
+        "temperature_max",
+        "temperature_min",
+        "humidity_max",
+        "humidity_min",
+        "daily_rainfall",
+        "monthly_rainfall",
+    ]
+    data = measurements.copy()
+    data["timestamp"] = pd.to_datetime(data["timestamp"], errors="coerce")
+    for column in ("temperature", "humidity"):
+        data[column] = pd.to_numeric(data[column], errors="coerce")
+    data = data.dropna(subset=["timestamp"]).sort_values("timestamp")
+    if data.empty:
+        return pd.DataFrame(columns=columns)
+
+    rain_changes = calculate_rainfall_changes(data)
+    data["date"] = data["timestamp"].dt.normalize()
+    data["month"] = data["timestamp"].dt.strftime("%Y-%m")
+    daily = (
+        data.groupby(["date", "month"], sort=True)
+        .agg(
+            temperature_max=("temperature", "max"),
+            temperature_min=("temperature", "min"),
+            humidity_max=("humidity", "max"),
+            humidity_min=("humidity", "min"),
+        )
+        .reset_index()
+    )
+    if rain_changes.empty:
+        daily["daily_rainfall"] = float("nan")
+    else:
+        rain_changes["date"] = rain_changes["timestamp"].dt.normalize()
+        daily_rainfall = (
+            rain_changes.groupby("date")["rainfall_change"]
+            .sum(min_count=1)
+            .rename("daily_rainfall")
+        )
+        daily = daily.merge(daily_rainfall, on="date", how="left")
+
+    daily["monthly_rainfall"] = daily.groupby("month")["daily_rainfall"].cumsum()
+    daily["date"] = daily["date"].dt.strftime("%d/%m/%Y")
+    return daily[columns]
+
+
+def prepare_monthly_rainfall(measurements: pd.DataFrame) -> tuple[str, pd.DataFrame]:
+    """Calcula a chuva diária por variação do acumulador no mês da última leitura."""
+    columns = ["day", "rainfall"]
+    data = calculate_rainfall_changes(measurements)
+    if data.empty:
+        return "", pd.DataFrame(columns=columns)
+
+    latest = data.iloc[-1]["timestamp"]
+    month_data = data[
+        (data["timestamp"].dt.year == latest.year)
+        & (data["timestamp"].dt.month == latest.month)
+    ].copy()
+    daily = (
+        month_data.assign(day=month_data["timestamp"].dt.day)
+        .groupby("day")["rainfall_change"]
+        .sum(min_count=1)
+        .rename("rainfall")
+    )
+
+    month_start = latest.normalize().replace(day=1)
+    day_count = month_start.days_in_month
+    chart_data = pd.DataFrame({"day": range(1, day_count + 1)})
+    chart_data = chart_data.merge(daily, on="day", how="left")
+    month_names = (
+        "janeiro",
+        "fevereiro",
+        "março",
+        "abril",
+        "maio",
+        "junho",
+        "julho",
+        "agosto",
+        "setembro",
+        "outubro",
+        "novembro",
+        "dezembro",
+    )
+    month_label = f"{month_names[latest.month - 1]} de {latest.year}"
+    return month_label, chart_data
+
+
+@st.fragment(run_every=60, key="dashboard")
 def render_dashboard() -> None:
     """Renderiza um painel executivo com indicadores e histórico de dados."""
     st.markdown(
@@ -133,6 +243,8 @@ def render_dashboard() -> None:
             border-radius: 12px;
             padding: 0.8rem 1rem;
             box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+            min-height: 112px;
+            box-sizing: border-box;
         }
         </style>
         """,
@@ -140,9 +252,8 @@ def render_dashboard() -> None:
     )
 
     supabase_configured = all(get_supabase_settings())
-    source = "Supabase" if supabase_configured else "CSV local"
-    st.title("Estação Raspberry")
-    st.caption(f"Painel executivo de monitoramento ambiental — dados via {source}")
+    st.title("Estação Experimental")
+    st.caption("Painel executivo de monitoramento ambiental")
 
     measurements = load_measurements(DEFAULT_CSV_PATH)
 
@@ -160,53 +271,68 @@ def render_dashboard() -> None:
         return
 
     latest = measurements.iloc[-1]
-    oldest = measurements.iloc[0]
+    previous = measurements.iloc[-2] if len(measurements) > 1 else None
 
-    delta_temp = latest["temperature"] - oldest["temperature"] if len(measurements) > 1 else 0.0
-    delta_hum = latest["humidity"] - oldest["humidity"] if len(measurements) > 1 else 0.0
+    delta_temp = format_metric_delta(
+        float(latest["temperature"]),
+        float(previous["temperature"]) if previous is not None else None,
+        "°C",
+    )
+    delta_hum = format_metric_delta(
+        float(latest["humidity"]),
+        float(previous["humidity"]) if previous is not None else None,
+        "%",
+    )
     rain_total = latest.get("rain_accumulated")
+    previous_rain = previous.get("rain_accumulated") if previous is not None else None
 
     col_temp, col_hum, col_rain = st.columns(3)
-    col_temp.metric("Temperatura", f"{latest['temperature']} °C", f"{delta_temp:+.2f} °C")
-    col_hum.metric("Umidade", f"{latest['humidity']} %", f"{delta_hum:+.2f} %")
+    col_temp.metric("Temperatura", f"{latest['temperature']} °C", delta_temp)
+    col_hum.metric("Umidade", f"{latest['humidity']} %", delta_hum)
     rain_value = f"{float(rain_total):.2f} mm" if pd.notna(rain_total) else "Sem dado"
-    col_rain.metric("Chuva acumulada", rain_value)
-
-    chart_data = measurements[["timestamp", "temperature", "humidity", "rain_accumulated"]].copy()
-    chart_data = chart_data.set_index("timestamp")
-
-    col_chart_1, col_chart_2 = st.columns(2)
-    with col_chart_1:
-        st.subheader("Temperatura e umidade")
-        st.line_chart(chart_data[["temperature", "humidity"]])
-    with col_chart_2:
-        st.subheader("Chuva acumulada")
-        if chart_data["rain_accumulated"].notna().any():
-            st.area_chart(chart_data[["rain_accumulated"]])
-            st.caption("Acumulado informado pelo STM32 (mm)")
-        else:
-            st.info("Sem dados de chuva. O STM32 deve enviar o campo RAIN em milímetros.")
-
-    st.subheader("Última leitura")
-    st.json(
-        {
-            "timestamp": latest["timestamp"].isoformat(timespec="seconds"),
-            "temperature": float(latest["temperature"]),
-            "humidity": float(latest["humidity"]),
-            "rain_accumulated": (
-                float(rain_total) if pd.notna(rain_total) else None
-            ),
-        }
+    delta_rain = format_metric_delta(
+        float(rain_total) if pd.notna(rain_total) else float("nan"),
+        float(previous_rain) if previous_rain is not None and pd.notna(previous_rain) else None,
+        "mm",
     )
+    col_rain.metric("Chuva acumulada", rain_value, delta_rain)
+
+    chart_data = measurements.set_index("timestamp")
+    st.subheader("Temperatura")
+    st.line_chart(
+        chart_data[["temperature"]],
+        y_label="Temperatura (°C)",
+    )
+    st.subheader("Umidade")
+    st.line_chart(
+        chart_data[["humidity"]],
+        y_label="Umidade (%)",
+    )
+
+    month_label, rainfall_data = prepare_monthly_rainfall(measurements)
+    st.subheader(f"Chuva diária — {month_label}" if month_label else "Chuva diária")
+    if rainfall_data["rainfall"].notna().any():
+        st.bar_chart(
+            rainfall_data.assign(rainfall=rainfall_data["rainfall"].fillna(0)),
+            x="day",
+            y="rainfall",
+            x_label="Dia do mês",
+            y_label="Chuva (mm)",
+        )
+    else:
+        st.info("Sem dados suficientes para calcular a chuva diária neste mês.")
 
     st.subheader("Histórico completo")
     st.dataframe(
-        measurements[["timestamp", "temperature", "humidity", "rain_accumulated"]].rename(
+        prepare_daily_history(measurements).rename(
             columns={
-                "timestamp": "Data/Hora",
-                "temperature": "Temperatura (°C)",
-                "humidity": "Umidade (%)",
-                "rain_accumulated": "Chuva acumulada (mm)",
+                "date": "Data",
+                "temperature_max": "Temperatura máxima (°C)",
+                "temperature_min": "Temperatura mínima (°C)",
+                "humidity_max": "Umidade máxima (%)",
+                "humidity_min": "Umidade mínima (%)",
+                "daily_rainfall": "Chuva no dia (mm)",
+                "monthly_rainfall": "Chuva acumulada no mês (mm)",
             }
         ),
         width="stretch",
