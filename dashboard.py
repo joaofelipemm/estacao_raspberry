@@ -62,7 +62,14 @@ def fetch_supabase_measurements() -> pd.DataFrame:
         response = requests.get(endpoint, headers=headers, params=params, timeout=10)
         response.raise_for_status()
         payload = response.json()
-    except Exception:
+    except (requests.RequestException, ValueError) as exc:
+        response = getattr(exc, "response", None)
+        status_code = getattr(response, "status_code", None)
+        status = f" (HTTP {status_code})" if status_code else ""
+        st.error(
+            "Falha ao consultar o Supabase"
+            f"{status}. Confira a URL, a chave pública e as permissões de leitura."
+        )
         return pd.DataFrame(columns=["timestamp", "temperature", "humidity", "rain_accumulated"])
 
     if not payload:
@@ -132,14 +139,24 @@ def render_dashboard() -> None:
         unsafe_allow_html=True,
     )
 
-    source = "Supabase" if get_supabase_settings()[0] and get_supabase_settings()[1] else "CSV local"
+    supabase_configured = all(get_supabase_settings())
+    source = "Supabase" if supabase_configured else "CSV local"
     st.title("Estação Raspberry")
     st.caption(f"Painel executivo de monitoramento ambiental — dados via {source}")
 
     measurements = load_measurements(DEFAULT_CSV_PATH)
 
     if measurements.empty:
-        st.info("Ainda não há leituras registradas. Aguarde a primeira coleta do STM32 ou configure o Supabase.")
+        if supabase_configured:
+            st.info(
+                "A consulta terminou sem leituras válidas. Verifique se "
+                "`public.measurements` contém registros."
+            )
+        else:
+            st.info(
+                "Supabase não configurado: adicione `SUPABASE_URL` e "
+                "`SUPABASE_PUBLISHABLE_KEY` (ou `SUPABASE_ANON_KEY`) aos Secrets."
+            )
         return
 
     latest = measurements.iloc[-1]

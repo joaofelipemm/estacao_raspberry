@@ -1,8 +1,9 @@
 from pathlib import Path
 
 import pandas as pd
+import requests
 
-from dashboard import get_supabase_settings, load_measurements
+from dashboard import fetch_supabase_measurements, get_supabase_settings, load_measurements
 
 
 def test_get_supabase_settings_accepts_supabase_key_alias(monkeypatch) -> None:
@@ -105,6 +106,25 @@ def test_load_measurements_reads_supabase_when_configured(monkeypatch) -> None:
     assert dataframe.iloc[0]["temperature"] == 21.4
     assert dataframe.iloc[0]["humidity"] == 63.1
     assert dataframe.iloc[0]["rain_accumulated"] == 3.8
+
+
+def test_fetch_supabase_measurements_reports_request_errors(monkeypatch) -> None:
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon-key")
+    errors = []
+
+    def raise_connection_error(*args, **kwargs):
+        raise requests.ConnectionError("connection failed")
+
+    monkeypatch.setattr("dashboard.requests.get", raise_connection_error)
+    monkeypatch.setattr("dashboard.st.error", errors.append)
+
+    dataframe = fetch_supabase_measurements()
+
+    assert dataframe.empty
+    assert errors == [
+        "Falha ao consultar o Supabase. Confira a URL, a chave pública e as permissões de leitura."
+    ]
 
 
 def test_load_measurements_does_not_treat_legacy_pressure_as_rain(tmp_path: Path, monkeypatch) -> None:

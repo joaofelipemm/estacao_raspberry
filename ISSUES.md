@@ -42,11 +42,13 @@ A solução será organizada em camadas com foco em robustez, aquisição serial
 
 ## Status geral
 
-- Sprint atual: concluir publicação do dashboard no Streamlit Community Cloud
-- Prioridade atual: concluir deploy do dashboard (P2); validar operação no Raspberry Pi permanece como trabalho P1.
+- Sprint atual: diagnosticar a consulta ao Supabase no dashboard publicado
+- Prioridade atual: validar a integração do dashboard com Supabase (P2); validar operação no Raspberry Pi permanece como trabalho P1.
 - Fluxo validado no notebook: STM32 -> USB/serial (COM11, 115200 baud) -> CSV local -> Supabase -> dashboard Streamlit local.
-- O dashboard consulta medições reais no Supabase; a publicação pública no Community Cloud ainda está pendente de configurar Secrets e concluir o deploy.
-- Commits enviados para `main`: `0c8e575` (integração serial/CSV/Supabase/dashboard) e `e3811f9` (preparação de Secrets e dependências do Streamlit Cloud).
+- O dashboard local consultou medições reais no Supabase. O app foi publicado no Community Cloud e abre, mas não apresenta leituras; a validação da consulta remota permanece pendente.
+- O app publicado mostra que está configurado para usar Supabase; o usuário confirmou os nomes dos Secrets e que apontam para o projeto esperado.
+- O dashboard agora diferencia falhas HTTP/rede de consultas sem leituras, sem exibir credenciais; essa melhoria depende do deploy do commit atual para revelar o diagnóstico do Cloud.
+- Commits enviados para `main`: `0c8e575` (integração serial/CSV/Supabase/dashboard), `e3811f9` (preparação de Secrets e dependências do Streamlit Cloud) e `32a093f` (atualização anterior do progresso).
 
 ---
 
@@ -249,8 +251,11 @@ Disponibilizar indicadores e gráficos de monitoramento para o usuário.
 - [x] Consultar Supabase primeiro e usar CSV local como fallback.
 - [x] Testar o dashboard local no navegador com dados reais do Supabase.
 - [x] Preparar leitura de Streamlit Secrets, ignorar `secrets.toml` local e documentar configuração segura.
-- [ ] Configurar `SUPABASE_URL` e `SUPABASE_PUBLISHABLE_KEY` (ou `SUPABASE_ANON_KEY`) em **App settings > Secrets** no Community Cloud.
-- [ ] Publicar `dashboard.py` no Streamlit Community Cloud e validar a URL pública.
+- [x] Configurar `SUPABASE_URL` e `SUPABASE_PUBLISHABLE_KEY` (ou `SUPABASE_ANON_KEY`) em **App settings > Secrets** no Community Cloud.
+- [x] Publicar o dashboard no Streamlit Community Cloud com Python 3.12 e confirmar que o app abre.
+- [x] Exibir diagnóstico seguro quando a consulta ao Supabase falhar, incluindo o status HTTP quando disponível.
+- [ ] Confirmar no Cloud que a consulta retorna leituras; após o deploy do diagnóstico, corrigir a causa indicada ou verificar se `public.measurements` está sem registros.
+- [ ] Confirmar acesso ao dashboard como visitante sem autenticação.
 - [ ] Implementar filtros por período/dispositivo e alertas de anomalia.
 
 ---
