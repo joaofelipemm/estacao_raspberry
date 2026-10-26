@@ -69,6 +69,7 @@ class SupabaseSyncClient:
             "temperature": reading.temperature,
             "humidity": reading.humidity,
             "rain_accumulated": reading.rain_accumulated,
+            "solar_radiation": reading.solar_radiation,
             "source": self.source,
             "status": status,
             "metadata": metadata or {},
@@ -158,6 +159,7 @@ def sync_measurements_from_csv(
             temperature=row["temperature"],
             humidity=row["humidity"],
             rain_accumulated=row["rain_accumulated"],
+            solar_radiation=row.get("solar_radiation"),
             device_id=measurement_device_id,
         )
         for attempt in range(max_attempts):

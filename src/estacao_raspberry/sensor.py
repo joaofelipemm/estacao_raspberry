@@ -15,6 +15,7 @@ class SensorReading:
     rain_accumulated: float | None = None
     measured_at: datetime | None = None
     device_id: str | None = None
+    solar_radiation: float | None = None
 
 
 class Sensor:

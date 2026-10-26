@@ -46,6 +46,7 @@ def test_supabase_client_sends_measurement_payload(monkeypatch) -> None:
         temperature=22.5,
         humidity=60.0,
         rain_accumulated=12.4,
+        solar_radiation=456.7,
         device_id="est_01",
     )
 
@@ -61,6 +62,7 @@ def test_supabase_client_sends_measurement_payload(monkeypatch) -> None:
     assert payload["temperature"] == 22.5
     assert payload["humidity"] == 60.0
     assert payload["rain_accumulated"] == 12.4
+    assert payload["solar_radiation"] == 456.7
     assert fake_session.calls[0]["params"] == {"on_conflict": "sync_id"}
     assert fake_session.calls[0]["headers"]["Prefer"] == "resolution=ignore-duplicates,return=minimal"
     assert payload["source"] == "stm32"
@@ -71,7 +73,12 @@ def test_sync_pending_csv_retries_and_marks_measurement_synced(tmp_path, monkeyp
     csv_path = tmp_path / "measurements.csv"
     store = MeasurementStore(csv_path)
     measurement_id = store.save(
-        SensorReading(temperature=22.5, humidity=60.0, rain_accumulated=12.4)
+        SensorReading(
+            temperature=22.5,
+            humidity=60.0,
+            rain_accumulated=12.4,
+            solar_radiation=321.5,
+        )
     )
     fake_session = FakeSession([503, 503, 201])
 
@@ -92,6 +99,7 @@ def test_sync_pending_csv_retries_and_marks_measurement_synced(tmp_path, monkeyp
     assert synced_count == 1
     assert len(fake_session.calls) == 3
     assert all(call["json"]["sync_id"] == measurement_id for call in fake_session.calls)
+    assert fake_session.calls[-1]["json"]["solar_radiation"] == 321.5
     assert MeasurementStore(csv_path).read_all()[0]["sync_status"] == "synced"
 
 

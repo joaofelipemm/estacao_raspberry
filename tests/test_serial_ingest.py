@@ -44,6 +44,21 @@ def test_parse_serial_payload_accepts_stm32_dados_record() -> None:
     assert reading.temperature == 23.66
     assert reading.humidity == 77.06
     assert reading.rain_accumulated == 0.4
+    assert reading.solar_radiation is None
+
+
+def test_parse_serial_payload_accepts_optional_solar_radiation() -> None:
+    reading = parse_serial_payload(
+        "DADOS:est_01;05/10/2026;16:15:57;23.66;77.06;0.4;456.7"
+    )
+
+    assert reading.solar_radiation == 456.7
+
+
+def test_parse_serial_payload_accepts_legacy_frame_with_optional_rad() -> None:
+    reading = parse_serial_payload("<TEMP=23.4;HUM=58.1;RAIN=12.5;RAD=456.7>")
+
+    assert reading.solar_radiation == 456.7
 
 
 def test_parse_serial_payload_rejects_malformed_stm32_record() -> None:

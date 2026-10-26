@@ -58,6 +58,9 @@ ALTER TABLE public.measurements
 ADD COLUMN IF NOT EXISTS rain_accumulated double precision;
 
 ALTER TABLE public.measurements
+ADD COLUMN IF NOT EXISTS solar_radiation double precision;
+
+ALTER TABLE public.measurements
 ADD COLUMN IF NOT EXISTS sync_id uuid;
 
 CREATE UNIQUE INDEX IF NOT EXISTS measurements_sync_id_unique
@@ -67,7 +70,7 @@ ALTER TABLE public.measurements
 ALTER COLUMN pressure DROP NOT NULL;
 ```
 
-O protocolo serial espera `TEMP`, `HUM` e `RAIN`, por exemplo: `<TEMP=23.4;HUM=58.1;RAIN=12.5>`. CSVs antigos são migrados preservando as leituras; os valores históricos de pressão ficam sem valor de chuva.
+O protocolo serial espera `TEMP`, `HUM` e `RAIN`, por exemplo: `<TEMP=23.4;HUM=58.1;RAIN=12.5>`. A radiação solar é opcional e pode ser enviada como `RAD`, em W/m²: `<TEMP=23.4;HUM=58.1;RAIN=12.5;RAD=450>`. Para registros STM32, o último campo numérico opcional de `DADOS` é a radiação, por exemplo `DADOS:est_01;05/10/2026;16:15:57;23.66;77.06;0.4;450`. Execute a migração SQL antes de sincronizar registros com o campo novo. CSVs antigos são migrados preservando as leituras; os valores históricos de pressão ficam sem valor de chuva ou radiação.
 
 Ao executar `python -m estacao_raspberry.main`, cada leitura é gravada localmente antes da sincronização. O CSV mantém um ID estável e o estado `pending`/`synced`; o Raspberry tenta cada pendência até três vezes com espera exponencial. Falhas mantêm a leitura pendente para a próxima execução. A coluna `sync_id` com índice único no Supabase torna seguro repetir uma requisição cuja resposta tenha se perdido.
 

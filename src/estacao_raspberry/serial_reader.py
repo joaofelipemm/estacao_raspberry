@@ -53,8 +53,9 @@ def parse_serial_payload(
     """Converte uma mensagem serial em uma leitura normalizada.
 
     Formatos aceitos:
-    - <TEMP=23.4;HUM=58.1;RAIN=12.5;CRC=abc123>
-    - TEMP=23.4;HUM=58.1;RAIN=12.5
+    - <TEMP=23.4;HUM=58.1;RAIN=12.5;RAD=450;CRC=abc123>
+    - TEMP=23.4;HUM=58.1;RAIN=12.5;RAD=450
+    - DADOS:...;23.4;58.1;12.5;450 (radiação em W/m² opcional)
     """
     if not isinstance(payload, str):
         raise ValueError("Formato inválido: payload deve ser uma string.")
@@ -67,15 +68,16 @@ def parse_serial_payload(
 
     if message.upper().startswith("DADOS:"):
         fields = [field.strip() for field in message.split(":", 1)[1].split(";")]
-        if len(fields) != 6 or not fields[0]:
+        if len(fields) not in {6, 7} or not fields[0]:
             raise ValueError(
-                "Formato inválido: DADOS deve conter dispositivo, data, hora, temperatura, umidade e chuva."
+                "Formato inválido: DADOS deve conter dispositivo, data, hora, temperatura, umidade, chuva e, opcionalmente, radiação solar."
             )
         try:
             measured_at = datetime.strptime(
                 f"{fields[1]} {fields[2]}", "%d/%m/%Y %H:%M:%S"
             ).astimezone()
-            temperature, humidity, rain_accumulated = map(float, fields[3:])
+            temperature, humidity, rain_accumulated = map(float, fields[3:6])
+            solar_radiation = float(fields[6]) if len(fields) == 7 else None
         except ValueError as exc:
             raise ValueError("Formato inválido: valores incorretos no registro DADOS.") from exc
 
@@ -83,6 +85,7 @@ def parse_serial_payload(
             temperature=temperature,
             humidity=humidity,
             rain_accumulated=rain_accumulated,
+            solar_radiation=solar_radiation,
             measured_at=measured_at,
             device_id=fields[0],
         )
@@ -110,13 +113,17 @@ def parse_serial_payload(
         temperature = float(digest["TEMP"])
         humidity = float(digest["HUM"])
         rain_accumulated = float(digest["RAIN"])
+        solar_radiation = float(digest["RAD"]) if "RAD" in digest else None
     except ValueError as exc:  # pragma: no cover - branch covered by bad payload tests
-        raise ValueError("Formato inválido: valores numéricos esperados em TEMP, HUM e PRES.") from exc
+        raise ValueError(
+            "Formato inválido: valores numéricos esperados em TEMP, HUM, RAIN e RAD."
+        ) from exc
 
     return SensorReading(
         temperature=temperature,
         humidity=humidity,
         rain_accumulated=rain_accumulated,
+        solar_radiation=solar_radiation,
     )
 
 

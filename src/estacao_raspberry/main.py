@@ -49,6 +49,8 @@ def main(
             print(f"Temperatura: {reading.temperature} C")
             print(f"Umidade: {reading.humidity} %")
             print(f"Chuva acumulada: {reading.rain_accumulated} mm")
+            if reading.solar_radiation is not None:
+                print(f"Radiação solar: {reading.solar_radiation} W/m²")
             print(f"Dados salvos em: {store.file_path}")
 
             supabase_url = getattr(settings, "resolved_supabase_url", "")

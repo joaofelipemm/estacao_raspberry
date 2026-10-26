@@ -21,6 +21,7 @@ class MeasurementStore:
         "temperature",
         "humidity",
         "rain_accumulated",
+        "solar_radiation",
         "sync_status",
     ]
 
@@ -54,6 +55,7 @@ class MeasurementStore:
                         "temperature": row.get("temperature", ""),
                         "humidity": row.get("humidity", ""),
                         "rain_accumulated": rain_accumulated,
+                        "solar_radiation": row.get("solar_radiation", ""),
                         "sync_status": row.get(
                             "sync_status", "pending" if rain_accumulated else "not_applicable"
                         ),
@@ -82,6 +84,7 @@ class MeasurementStore:
             reading.temperature,
             reading.humidity,
             reading.rain_accumulated,
+            reading.solar_radiation,
             "pending" if reading.rain_accumulated is not None else "not_applicable",
         ]
         with self.file_path.open("a", encoding="utf-8", newline="") as csv_file:
@@ -106,6 +109,7 @@ class MeasurementStore:
                         "temperature": self._to_float(row.get("temperature")),
                         "humidity": self._to_float(row.get("humidity")),
                         "rain_accumulated": self._to_float(row.get("rain_accumulated")),
+                        "solar_radiation": self._to_float(row.get("solar_radiation")),
                         "sync_status": row.get("sync_status"),
                     }
                 )

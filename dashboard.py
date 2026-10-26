@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import altair as alt
 import pandas as pd
 import requests
 import streamlit as st
@@ -25,6 +26,7 @@ MEASUREMENT_COLUMNS = [
     "temperature",
     "humidity",
     "rain_accumulated",
+    "solar_radiation",
     "device_id",
     "source",
 ]
@@ -54,6 +56,17 @@ def _get_streamlit_secret(name: str) -> str | None:
     return str(value) if value else None
 
 
+def _is_missing_solar_radiation_column(error: requests.HTTPError) -> bool:
+    """Identifica um Supabase que ainda não recebeu a migração de radiação."""
+    response = error.response
+    if response is None or response.status_code != 400:
+        return False
+    message = response.text.lower()
+    return "solar_radiation" in message and (
+        "does not exist" in message or "schema cache" in message
+    )
+
+
 def fetch_supabase_measurements(after_id: int | None = None) -> pd.DataFrame:
     """Busca leituras do Supabase em páginas, opcionalmente após um ID."""
     url, key = get_supabase_settings()
@@ -69,17 +82,37 @@ def fetch_supabase_measurements(after_id: int | None = None) -> pd.DataFrame:
     try:
         payload = []
         offset = 0
+        select_columns = (
+            "id,measured_at,temperature,humidity,rain_accumulated,"
+            "solar_radiation,device_id,source"
+        )
         while True:
             params = {
-                "select": "id,measured_at,temperature,humidity,rain_accumulated,device_id,source",
+                "select": select_columns,
                 "order": "id.asc",
                 "limit": str(SUPABASE_PAGE_SIZE),
                 "offset": str(offset),
             }
             if after_id is not None:
                 params["id"] = f"gt.{after_id}"
-            response = requests.get(endpoint, headers=headers, params=params, timeout=30)
-            response.raise_for_status()
+            try:
+                response = requests.get(
+                    endpoint, headers=headers, params=params, timeout=30
+                )
+                response.raise_for_status()
+            except requests.HTTPError as exc:
+                if (
+                    "solar_radiation" not in select_columns
+                    or not _is_missing_solar_radiation_column(exc)
+                ):
+                    raise
+                select_columns = (
+                    "id,measured_at,temperature,humidity,rain_accumulated,"
+                    "device_id,source"
+                )
+                payload = []
+                offset = 0
+                continue
             page = response.json()
             if not isinstance(page, list):
                 raise ValueError("A resposta da API do Supabase não é uma lista de medições.")
@@ -116,6 +149,11 @@ def fetch_supabase_measurements(after_id: int | None = None) -> pd.DataFrame:
                     if row.get("rain_accumulated") is not None
                     else None
                 ),
+                "solar_radiation": (
+                    float(row["solar_radiation"])
+                    if row.get("solar_radiation") is not None
+                    else None
+                ),
                 "device_id": row.get("device_id"),
                 "source": row.get("source"),
             }
@@ -140,15 +178,27 @@ def load_measurements(csv_path: str | Path = DEFAULT_CSV_PATH) -> pd.DataFrame:
 
     path = Path(csv_path)
     if not path.exists():
-        return pd.DataFrame(columns=["timestamp", "temperature", "humidity", "rain_accumulated"])
+        return pd.DataFrame(
+            columns=[
+                "timestamp",
+                "temperature",
+                "humidity",
+                "rain_accumulated",
+                "solar_radiation",
+            ]
+        )
 
     dataframe = pd.read_csv(path)
     if dataframe.empty:
         return dataframe
 
-    dataframe["timestamp"] = pd.to_datetime(dataframe["timestamp"], errors="coerce")
+    dataframe["timestamp"] = pd.to_datetime(
+        dataframe["timestamp"], errors="coerce", utc=True, format="mixed"
+    )
     if "rain_accumulated" not in dataframe.columns:
         dataframe["rain_accumulated"] = pd.NA
+    if "solar_radiation" not in dataframe.columns:
+        dataframe["solar_radiation"] = pd.NA
     dataframe = (
         dataframe.dropna(subset=["timestamp"])
         .sort_values("timestamp", kind="stable")
@@ -208,6 +258,84 @@ def prepare_latest_day_measurements(measurements: pd.DataFrame) -> pd.DataFrame:
 
     latest_day = data["timestamp"].iloc[-1].date()
     return data[data["timestamp"].dt.date == latest_day].reset_index(drop=True)
+
+
+def get_available_measurement_dates(
+    measurements: pd.DataFrame, value_column: str | None = None
+) -> list[str]:
+    """Retorna os dias disponíveis no fuso da estação, do mais recente ao antigo."""
+    timestamps = _to_dashboard_timezone(measurements["timestamp"])
+    if value_column is not None:
+        if value_column not in measurements.columns:
+            return []
+        valid_values = pd.to_numeric(measurements[value_column], errors="coerce").notna()
+        timestamps = timestamps[valid_values]
+    timestamps = timestamps.dropna()
+    return sorted(timestamps.dt.strftime("%Y-%m-%d").unique().tolist(), reverse=True)
+
+
+def prepare_measurements_for_date(
+    measurements: pd.DataFrame, selected_date: str
+) -> pd.DataFrame:
+    """Retorna as medições de uma data selecionada no fuso da estação."""
+    data = measurements.copy()
+    data["timestamp"] = _to_dashboard_timezone(data["timestamp"])
+    data = data.dropna(subset=["timestamp"]).sort_values("timestamp")
+    selected_day = pd.Timestamp(selected_date).date()
+    return data[data["timestamp"].dt.date == selected_day].reset_index(drop=True)
+
+
+def prepare_sensor_chart_data(
+    measurements: pd.DataFrame,
+    selected_date: str,
+    value_column: str,
+    value_label: str,
+) -> pd.DataFrame:
+    """Prepara os dados do gráfico com horário e série em português."""
+    data = prepare_measurements_for_date(measurements, selected_date)
+    return pd.DataFrame(
+        {
+            "Horário (Brasília)": data["timestamp"].dt.tz_localize(None),
+            value_label: pd.to_numeric(data[value_column], errors="coerce"),
+        }
+    )
+
+
+def render_sensor_line_chart(chart_data: pd.DataFrame, value_label: str) -> None:
+    """Renderiza uma série temporal com eixos e tooltip em português."""
+    if chart_data.empty or chart_data[value_label].notna().sum() == 0:
+        st.info(f"Sem dados de {value_label.lower()} para esta data.")
+        return
+
+    time_column = "Horário (Brasília)"
+    chart = (
+        alt.Chart(chart_data)
+        .mark_line()
+        .encode(
+            x=alt.X(
+                field=time_column,
+                type="temporal",
+                title=time_column,
+                axis=alt.Axis(
+                    format="%H:%M",
+                    labelAngle=-45,
+                    tickCount={"interval": "hour", "step": 2},
+                ),
+            ),
+            y=alt.Y(field=value_label, type="quantitative", title=value_label),
+            tooltip=[
+                alt.Tooltip(
+                    field=time_column,
+                    type="temporal",
+                    title=time_column,
+                    format="%d/%m/%Y %H:%M",
+                ),
+                alt.Tooltip(field=value_label, type="quantitative", title=value_label),
+            ],
+        )
+        .properties(height=320)
+    )
+    st.altair_chart(chart, width="stretch")
 
 
 def calculate_rainfall_changes(measurements: pd.DataFrame) -> pd.DataFrame:
@@ -417,25 +545,79 @@ def render_dashboard(measurements: pd.DataFrame) -> None:
     )
     col_rain.metric("Chuva acumulada", rain_value, delta_rain)
 
-    chart_data = prepare_latest_day_measurements(measurements).set_index("timestamp")
     st.subheader("Temperatura")
-    st.line_chart(
-        chart_data[["temperature"]],
-        y_label="Temperatura (°C)",
-    )
+    available_dates = get_available_measurement_dates(measurements)
+    if available_dates:
+        selected_date = st.selectbox(
+            "Data das medições",
+            available_dates,
+            format_func=lambda date: pd.Timestamp(date).strftime("%d/%m/%Y"),
+            key="temperature_chart_date",
+        )
+        temperature_data = prepare_sensor_chart_data(
+            measurements,
+            selected_date,
+            "temperature",
+            "Temperatura (°C)",
+        )
+        render_sensor_line_chart(temperature_data, "Temperatura (°C)")
+    else:
+        st.info("Não há datas válidas disponíveis para o gráfico de temperatura.")
+
     st.subheader("Umidade")
-    st.line_chart(
-        chart_data[["humidity"]],
-        y_label="Umidade (%)",
+    if available_dates:
+        selected_humidity_date = st.selectbox(
+            "Data das medições de umidade",
+            available_dates,
+            format_func=lambda date: pd.Timestamp(date).strftime("%d/%m/%Y"),
+            key="humidity_chart_date",
+        )
+        humidity_data = prepare_sensor_chart_data(
+            measurements,
+            selected_humidity_date,
+            "humidity",
+            "Umidade (%)",
+        )
+        render_sensor_line_chart(humidity_data, "Umidade (%)")
+    else:
+        st.info("Não há datas válidas disponíveis para o gráfico de umidade.")
+
+    st.subheader("Radiação solar")
+    radiation_dates = get_available_measurement_dates(
+        measurements, value_column="solar_radiation"
     )
+    if radiation_dates:
+        selected_radiation_date = st.selectbox(
+            "Data das medições de radiação solar",
+            radiation_dates,
+            format_func=lambda date: pd.Timestamp(date).strftime("%d/%m/%Y"),
+            key="solar_radiation_chart_date",
+        )
+        radiation_data = prepare_sensor_chart_data(
+            measurements,
+            selected_radiation_date,
+            "solar_radiation",
+            "Radiação solar (W/m²)",
+        )
+        render_sensor_line_chart(radiation_data, "Radiação solar (W/m²)")
+    else:
+        st.info(
+            "Ainda não há medições de radiação solar. Configure o STM32 para enviar "
+            "o campo RAD em W/m² e aplique a migração do Supabase."
+        )
 
     month_label, rainfall_data = prepare_monthly_rainfall(measurements)
     st.subheader(f"Chuva diária — {month_label}" if month_label else "Chuva diária")
     if rainfall_data["rainfall"].notna().any():
+        rainfall_chart = rainfall_data.rename(
+            columns={"day": "Dia do mês", "rainfall": "Chuva (mm)"}
+        )
         st.bar_chart(
-            rainfall_data.assign(rainfall=rainfall_data["rainfall"].fillna(0)),
-            x="day",
-            y="rainfall",
+            rainfall_chart.assign(
+                **{"Chuva (mm)": rainfall_chart["Chuva (mm)"].fillna(0)}
+            ),
+            x="Dia do mês",
+            y="Chuva (mm)",
             x_label="Dia do mês",
             y_label="Chuva (mm)",
         )

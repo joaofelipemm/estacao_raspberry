@@ -7,13 +7,17 @@ import requests
 from dashboard import (
     fetch_supabase_measurements,
     format_metric_delta,
+    get_available_measurement_dates,
     get_supabase_settings,
     get_latest_measurement_id,
     load_measurements,
     merge_new_measurements,
     prepare_daily_history,
     prepare_latest_day_measurements,
+    prepare_measurements_for_date,
     prepare_monthly_rainfall,
+    prepare_sensor_chart_data,
+    render_sensor_line_chart,
 )
 
 
@@ -44,6 +48,143 @@ def test_prepare_latest_day_measurements_keeps_only_latest_date() -> None:
     assert len(latest_day) == 2
     assert latest_day["temperature"].tolist() == [21.0, 22.0]
     assert latest_day["humidity"].tolist() == [60.0, 65.0]
+
+
+def test_get_available_measurement_dates_returns_local_days_newest_first() -> None:
+    measurements = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2026-10-23T23:55:00+00:00",
+                    "2026-10-24T02:55:00+00:00",
+                    "2026-10-24T03:00:00+00:00",
+                    "not-a-date",
+                ],
+                errors="coerce",
+                utc=True,
+            )
+        }
+    )
+
+    assert get_available_measurement_dates(measurements) == [
+        "2026-10-24",
+        "2026-10-23",
+    ]
+
+
+def test_get_available_measurement_dates_filters_days_without_sensor_values() -> None:
+    measurements = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2026-10-23T23:55:00+00:00",
+                    "2026-10-24T03:00:00+00:00",
+                    "2026-10-25T03:00:00+00:00",
+                ]
+            ),
+            "solar_radiation": [None, 450.5, float("nan")],
+        }
+    )
+
+    assert get_available_measurement_dates(
+        measurements, value_column="solar_radiation"
+    ) == ["2026-10-24"]
+
+
+def test_prepare_measurements_for_date_filters_to_selected_local_day() -> None:
+    measurements = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2026-10-23T23:55:00+00:00",
+                    "2026-10-24T02:55:00+00:00",
+                    "2026-10-24T03:00:00+00:00",
+                ]
+            ),
+            "temperature": [19.0, 20.0, 21.0],
+        }
+    )
+
+    selected_day = prepare_measurements_for_date(measurements, "2026-10-23")
+
+    assert selected_day["temperature"].tolist() == [19.0, 20.0]
+
+
+def test_prepare_sensor_chart_data_uses_portuguese_labels_and_local_time() -> None:
+    measurements = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2026-10-24T03:00:00+00:00",
+                    "2026-10-24T04:05:00+00:00",
+                ]
+            ),
+            "temperature": [21.0, 22.0],
+        }
+    )
+
+    chart_data = prepare_sensor_chart_data(
+        measurements,
+        "2026-10-24",
+        "temperature",
+        "Temperatura (°C)",
+    )
+
+    assert chart_data.columns.tolist() == ["Horário (Brasília)", "Temperatura (°C)"]
+    assert chart_data["Horário (Brasília)"].tolist() == [
+        pd.Timestamp("2026-10-24 00:00"),
+        pd.Timestamp("2026-10-24 01:05"),
+    ]
+    assert chart_data["Temperatura (°C)"].tolist() == [21.0, 22.0]
+
+
+def test_prepare_sensor_chart_data_filters_and_converts_solar_radiation() -> None:
+    measurements = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2026-10-24T03:00:00+00:00",
+                    "2026-10-25T03:00:00+00:00",
+                ]
+            ),
+            "solar_radiation": ["450.5", None],
+        }
+    )
+
+    chart_data = prepare_sensor_chart_data(
+        measurements,
+        "2026-10-24",
+        "solar_radiation",
+        "Radiação solar (W/m²)",
+    )
+
+    assert chart_data["Horário (Brasília)"].tolist() == [
+        pd.Timestamp("2026-10-24 00:00")
+    ]
+    assert chart_data["Radiação solar (W/m²)"].tolist() == [450.5]
+
+
+def test_render_sensor_line_chart_uses_temporal_portuguese_axis(monkeypatch) -> None:
+    rendered = []
+    monkeypatch.setattr(
+        "dashboard.st.altair_chart",
+        lambda chart, **kwargs: rendered.append((chart, kwargs)),
+    )
+    chart_data = pd.DataFrame(
+        {
+            "Horário (Brasília)": pd.to_datetime(["2026-10-24 00:00"]),
+            "Radiação solar (W/m²)": [450.5],
+        }
+    )
+
+    render_sensor_line_chart(chart_data, "Radiação solar (W/m²)")
+
+    specification = rendered[0][0].to_dict()
+    assert specification["encoding"]["x"]["type"] == "temporal"
+    axis = specification["encoding"]["x"]["axis"]
+    assert axis["format"] == "%H:%M"
+    assert axis["tickCount"] == {"interval": "hour", "step": 2}
+    assert rendered[0][1] == {"width": "stretch"}
 
 
 def test_prepare_monthly_rainfall_calculates_daily_differences_and_resets() -> None:
@@ -328,6 +469,7 @@ def test_fetch_supabase_measurements_queries_only_rows_after_id(monkeypatch) -> 
         "temperature": 25.0,
         "humidity": 70.0,
         "rain_accumulated": 2.1,
+        "solar_radiation": 456.7,
         "device_id": "est_01",
         "source": "stm32",
     }
@@ -342,10 +484,61 @@ def test_fetch_supabase_measurements_queries_only_rows_after_id(monkeypatch) -> 
 
     assert len(dataframe) == 1
     assert dataframe.iloc[0]["id"] == 101
+    assert dataframe.iloc[0]["solar_radiation"] == 456.7
     assert calls[0]["id"] == "gt.100"
     assert calls[0]["order"] == "id.asc"
     assert calls[0]["select"].startswith("id,")
+    assert "solar_radiation" in calls[0]["select"]
     assert len(calls) == 2
+
+
+def test_fetch_supabase_measurements_falls_back_before_solar_migration(monkeypatch) -> None:
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon-key")
+    calls = []
+    errors = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def __init__(self, rows: list[dict], status_code: int = 200) -> None:
+            self.rows = rows
+            self.status_code = status_code
+            self.text = (
+                '{"code":"42703","message":"column solar_radiation does not exist"}'
+            )
+
+        def raise_for_status(self) -> None:
+            if self.status_code >= 400:
+                raise requests.HTTPError(response=self)
+
+        def json(self) -> list[dict]:
+            return self.rows
+
+    row = {
+        "id": 11,
+        "measured_at": "2026-10-24T22:00:00+00:00",
+        "temperature": 24.0,
+        "humidity": 70.0,
+        "rain_accumulated": 1.2,
+    }
+
+    def fake_get(*args, **kwargs) -> FakeResponse:
+        calls.append(kwargs["params"])
+        if len(calls) == 1:
+            return FakeResponse([], status_code=400)
+        return FakeResponse([row] if len(calls) == 2 else [])
+
+    monkeypatch.setattr("dashboard.requests.get", fake_get)
+    monkeypatch.setattr("dashboard.st.error", errors.append)
+
+    dataframe = fetch_supabase_measurements()
+
+    assert len(dataframe) == 1
+    assert pd.isna(dataframe.iloc[0]["solar_radiation"])
+    assert "solar_radiation" in calls[0]["select"]
+    assert "solar_radiation" not in calls[1]["select"]
+    assert errors == []
 
 
 def test_fetch_supabase_measurements_returns_empty_when_there_are_no_new_rows(
@@ -440,3 +633,26 @@ def test_load_measurements_does_not_treat_legacy_pressure_as_rain(tmp_path: Path
     dataframe = load_measurements(csv_file)
 
     assert pd.isna(dataframe.iloc[0]["rain_accumulated"])
+    assert pd.isna(dataframe.iloc[0]["solar_radiation"])
+
+
+def test_load_measurements_normalizes_mixed_timezone_timestamps(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.delenv("SUPABASE_ANON_KEY", raising=False)
+    csv_file = tmp_path / "mixed-timezones.csv"
+    csv_file.write_text(
+        "timestamp,temperature,humidity\n"
+        "2026-10-01T12:00:00+00:00,22.5,60.0\n"
+        "2026-10-01T09:00:00,23.0,61.0\n",
+        encoding="utf-8",
+    )
+
+    dataframe = load_measurements(csv_file)
+
+    assert dataframe["timestamp"].dt.tz is not None
+    assert dataframe["timestamp"].tolist() == [
+        pd.Timestamp("2026-10-01T09:00:00+00:00"),
+        pd.Timestamp("2026-10-01T12:00:00+00:00"),
+    ]

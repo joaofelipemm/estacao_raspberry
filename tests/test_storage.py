@@ -41,6 +41,7 @@ def test_measurement_store_migrates_legacy_pressure_csv_without_relabeling_it(tm
 
     records = store.read_all()
     assert records[0]["rain_accumulated"] is None
+    assert records[0]["solar_radiation"] is None
     assert records[1]["rain_accumulated"] == 2.5
 
 
@@ -51,6 +52,7 @@ def test_measurement_store_preserves_device_id_and_device_timestamp(tmp_path) ->
         temperature=23.66,
         humidity=77.06,
         rain_accumulated=0.4,
+        solar_radiation=456.7,
         measured_at=datetime.fromisoformat("2026-10-05T16:15:57+00:00"),
         device_id="est_01",
     )
@@ -60,3 +62,4 @@ def test_measurement_store_preserves_device_id_and_device_timestamp(tmp_path) ->
     saved = MeasurementStore(file_path).read_all()[0]
     assert saved["timestamp"] == "2026-10-05T16:15:57+00:00"
     assert saved["device_id"] == "est_01"
+    assert saved["solar_radiation"] == 456.7

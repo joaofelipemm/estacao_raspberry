@@ -6,10 +6,14 @@ create table if not exists public.measurements (
     temperature double precision not null,
     humidity double precision not null,
     rain_accumulated double precision not null,
+    solar_radiation double precision,
     source text not null default 'stm32',
     status text not null default 'synced',
     metadata jsonb not null default '{}'::jsonb
 );
+
+alter table public.measurements
+add column if not exists solar_radiation double precision;
 
 alter table public.measurements enable row level security;
 

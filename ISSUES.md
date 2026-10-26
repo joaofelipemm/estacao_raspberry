@@ -264,6 +264,17 @@ Disponibilizar indicadores e gráficos de monitoramento para o usuário.
 - [x] Manter o histórico carregado na sessão e buscar somente medições com `id` novo a cada 60 segundos; sem novos registros, não rerenderizar o dashboard.
 - [x] Publicar no Community Cloud a atualização incremental do histórico.
 - [ ] Se registros existentes forem editados/excluídos no futuro, adicionar `updated_at`/versionamento ou Supabase Realtime para detectar essas mudanças sem reler o histórico.
+- [x] Adicionar um seletor de data ao gráfico de temperatura, listando os dias com medições e exibindo os dados do dia selecionado.
+- [ ] Publicar no Community Cloud o seletor de data do gráfico de temperatura.
+- [x] Adicionar seletor de data independente ao gráfico de umidade, com as datas disponíveis e o gráfico filtrado pelo dia escolhido.
+- [ ] Publicar no Community Cloud o seletor de data do gráfico de umidade.
+- [x] Traduzir rótulos dos gráficos para português e usar eixo temporal contínuo, mostrando somente os horários em intervalos de duas horas.
+- [ ] Publicar no Community Cloud os rótulos traduzidos dos gráficos.
+- [x] Adicionar gráfico de radiação solar com seletor independente de dias que tenham valores, sem fabricar dados ausentes.
+- [x] Ampliar protocolo serial, CSV e payload do Supabase com `RAD`/`solar_radiation` opcional em W/m², preservando registros antigos.
+- [x] Adicionar migração aditiva do Supabase para `solar_radiation`.
+- [x] Manter o dashboard compatível com o schema atual do Supabase enquanto a coluna `solar_radiation` ainda não existir.
+- [ ] Aplicar a migração no projeto Supabase e atualizar o firmware STM32 para transmitir `RAD` antes de validar dados reais de radiação.
 - [ ] Confirmar que uma nova medição é coletada e sincronizada continuamente.
 - [ ] Confirmar acesso ao dashboard como visitante sem autenticação.
 - [ ] Implementar filtros por período/dispositivo e alertas de anomalia.
