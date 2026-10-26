@@ -172,8 +172,10 @@ def test_render_sensor_line_chart_uses_temporal_portuguese_axis(monkeypatch) -> 
     )
     chart_data = pd.DataFrame(
         {
-            "Horário (Brasília)": pd.to_datetime(["2026-10-24 00:00"]),
-            "Radiação solar (W/m²)": [450.5],
+            "Horário (Brasília)": pd.to_datetime(
+                ["2026-10-24 00:00", "2026-10-24 04:00"]
+            ),
+            "Radiação solar (W/m²)": [450.5, 480.0],
         }
     )
 
@@ -183,7 +185,13 @@ def test_render_sensor_line_chart_uses_temporal_portuguese_axis(monkeypatch) -> 
     assert specification["encoding"]["x"]["type"] == "temporal"
     axis = specification["encoding"]["x"]["axis"]
     assert axis["format"] == "%H:%M"
-    assert axis["tickCount"] == {"interval": "hour", "step": 2}
+    assert [
+        value.get("hours", 0) for value in axis["values"]
+    ] == [
+        0,
+        2,
+        4,
+    ]
     assert rendered[0][1] == {"width": "stretch"}
 
 

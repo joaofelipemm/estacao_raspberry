@@ -308,6 +308,13 @@ def render_sensor_line_chart(chart_data: pd.DataFrame, value_label: str) -> None
         return
 
     time_column = "Horário (Brasília)"
+    first_timestamp = chart_data[time_column].min().normalize()
+    last_timestamp = chart_data[time_column].max()
+    tick_values = pd.date_range(
+        first_timestamp,
+        min(first_timestamp + pd.Timedelta(hours=22), last_timestamp.ceil("2h")),
+        freq="2h",
+    ).to_pydatetime()
     chart = (
         alt.Chart(chart_data)
         .mark_line()
@@ -319,7 +326,7 @@ def render_sensor_line_chart(chart_data: pd.DataFrame, value_label: str) -> None
                 axis=alt.Axis(
                     format="%H:%M",
                     labelAngle=-45,
-                    tickCount={"interval": "hour", "step": 2},
+                    values=tick_values,
                 ),
             ),
             y=alt.Y(field=value_label, type="quantitative", title=value_label),
