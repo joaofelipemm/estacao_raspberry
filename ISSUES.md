@@ -274,7 +274,10 @@ Disponibilizar indicadores e gráficos de monitoramento para o usuário.
 - [x] Ampliar protocolo serial, CSV e payload do Supabase com `RAD`/`solar_radiation` opcional em W/m², preservando registros antigos.
 - [x] Adicionar migração aditiva do Supabase para `solar_radiation`.
 - [x] Manter o dashboard compatível com o schema atual do Supabase enquanto a coluna `solar_radiation` ainda não existir.
-- [ ] Aplicar a migração no projeto Supabase e atualizar o firmware STM32 para transmitir `RAD` antes de validar dados reais de radiação.
+- [x] Aplicar a coluna `solar_radiation` no Supabase.
+- [x] Importar `Qg_AVG` do CSV para `solar_radiation` nas 15.271 medições existentes de 01/09/2026 a 24/10/2026; preencher 15.043 valores nulos, preservar 228 valores já correspondentes e confirmar zero duplicatas ou divergências.
+- [x] Confirmar no dashboard o seletor de datas e o gráfico de radiação solar com os valores importados.
+- [ ] Atualizar o firmware STM32 para transmitir `RAD` e validar a sincronização de novas leituras de radiação.
 - [ ] Confirmar que uma nova medição é coletada e sincronizada continuamente.
 - [ ] Confirmar acesso ao dashboard como visitante sem autenticação.
 - [ ] Implementar filtros por período/dispositivo e alertas de anomalia.
