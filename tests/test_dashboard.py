@@ -28,7 +28,7 @@ def test_prepare_latest_day_measurements_keeps_only_latest_date() -> None:
             "timestamp": pd.to_datetime(
                 [
                     "2026-10-23T23:55:00+00:00",
-                    "2026-10-24T00:00:00+00:00",
+                    "2026-10-24T03:00:00+00:00",
                     "2026-10-24T23:55:00+00:00",
                 ]
             ),
@@ -66,9 +66,9 @@ def test_prepare_monthly_rainfall_calculates_daily_differences_and_resets() -> N
 
     assert month == "outubro de 2026"
     assert len(chart_data) == 31
-    assert daily_rainfall.loc[1] == pytest.approx(0.8)
-    assert daily_rainfall.loc[2] == pytest.approx(0.4)
-    assert daily_rainfall.loc[3] == pytest.approx(0.2)
+    assert daily_rainfall.loc[1] == pytest.approx(0.9)
+    assert daily_rainfall.loc[2] == pytest.approx(0.3)
+    assert pd.isna(daily_rainfall.loc[3])
     assert pd.isna(daily_rainfall.loc[4])
 
 
@@ -93,15 +93,53 @@ def test_prepare_daily_history_aggregates_sensor_values_and_monthly_rainfall() -
 
     history = prepare_daily_history(measurements).set_index("date")
 
+    assert history.loc["30/09/2026", "temperature_max"] == 19.0
+    assert history.loc["30/09/2026", "temperature_min"] == 18.0
+    assert history.loc["30/09/2026", "humidity_max"] == 60.0
+    assert history.loc["30/09/2026", "humidity_min"] == 55.0
+    assert history.loc["30/09/2026", "daily_rainfall"] == pytest.approx(0.2)
     assert history.loc["01/10/2026", "temperature_max"] == 24.0
-    assert history.loc["01/10/2026", "temperature_min"] == 19.0
+    assert history.loc["01/10/2026", "temperature_min"] == 20.0
     assert history.loc["01/10/2026", "humidity_max"] == 75.0
-    assert history.loc["01/10/2026", "humidity_min"] == 60.0
-    assert history.loc["01/10/2026", "daily_rainfall"] == pytest.approx(0.8)
-    assert history.loc["01/10/2026", "monthly_rainfall"] == pytest.approx(0.8)
-    assert history.loc["02/10/2026", "daily_rainfall"] == pytest.approx(0.4)
+    assert history.loc["01/10/2026", "humidity_min"] == 62.0
+    assert history.loc["01/10/2026", "daily_rainfall"] == pytest.approx(0.9)
+    assert history.loc["01/10/2026", "monthly_rainfall"] == pytest.approx(0.9)
+    assert history.loc["02/10/2026", "daily_rainfall"] == pytest.approx(0.3)
     assert history.loc["02/10/2026", "monthly_rainfall"] == pytest.approx(1.2)
-    assert history.loc["03/10/2026", "monthly_rainfall"] == pytest.approx(1.4)
+
+
+def test_prepare_daily_history_keeps_rain_counters_separate_by_source_and_device() -> None:
+    measurements = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2026-10-05T19:15:00+00:00",
+                    "2026-10-05T19:15:57+00:00",
+                    "2026-10-05T19:20:00+00:00",
+                    "2026-10-05T19:22:57+00:00",
+                    "2026-10-05T19:25:00+00:00",
+                    "2026-10-05T19:57:58+00:00",
+                ]
+            ),
+            "temperature": [20.0, 20.1, 20.2, 20.3, 20.4, 20.5],
+            "humidity": [60.0, 61.0, 62.0, 63.0, 64.0, 65.0],
+            "rain_accumulated": [272.034, 0.4, 272.034, 0.8, 272.034, 1.0],
+            "source": ["csv_import", "stm32", "csv_import", "stm32", "csv_import", "stm32"],
+            "device_id": [
+                "estacao-experimental-csv",
+                "est_01",
+                "estacao-experimental-csv",
+                "est_01",
+                "estacao-experimental-csv",
+                "est_01",
+            ],
+        }
+    )
+
+    history = prepare_daily_history(measurements).set_index("date")
+
+    assert history.loc["05/10/2026", "daily_rainfall"] == pytest.approx(0.6)
+    assert history.loc["05/10/2026", "monthly_rainfall"] == pytest.approx(0.6)
 
 
 def test_get_supabase_settings_accepts_supabase_key_alias(monkeypatch) -> None:

@@ -16,6 +16,7 @@ load_dotenv()
 DEFAULT_CSV_PATH = Path("data/measurements.csv")
 SUPABASE_PAGE_SIZE = 1000
 DASHBOARD_REFRESH_SECONDS = 60
+DASHBOARD_TIMEZONE = "America/Sao_Paulo"
 
 
 st.set_page_config(page_title="Estação Experimental", page_icon="🌡️", layout="wide")
@@ -46,7 +47,16 @@ def fetch_supabase_measurements() -> pd.DataFrame:
     """Busca todas as leituras em páginas e converte para DataFrame."""
     url, key = get_supabase_settings()
     if not url or not key:
-        return pd.DataFrame(columns=["timestamp", "temperature", "humidity", "rain_accumulated"])
+        return pd.DataFrame(
+            columns=[
+                "timestamp",
+                "temperature",
+                "humidity",
+                "rain_accumulated",
+                "device_id",
+                "source",
+            ]
+        )
 
     endpoint = f"{url.rstrip('/')}/rest/v1/measurements"
     headers = {
@@ -59,7 +69,7 @@ def fetch_supabase_measurements() -> pd.DataFrame:
         offset = 0
         while True:
             params = {
-                "select": "measured_at,temperature,humidity,rain_accumulated",
+                "select": "measured_at,temperature,humidity,rain_accumulated,device_id,source",
                 "order": "measured_at.asc,id.asc",
                 "limit": str(SUPABASE_PAGE_SIZE),
                 "offset": str(offset),
@@ -81,10 +91,28 @@ def fetch_supabase_measurements() -> pd.DataFrame:
             "Falha ao consultar o Supabase"
             f"{status}. Confira a URL, a chave pública e as permissões de leitura."
         )
-        return pd.DataFrame(columns=["timestamp", "temperature", "humidity", "rain_accumulated"])
+        return pd.DataFrame(
+            columns=[
+                "timestamp",
+                "temperature",
+                "humidity",
+                "rain_accumulated",
+                "device_id",
+                "source",
+            ]
+        )
 
     if not payload:
-        return pd.DataFrame(columns=["timestamp", "temperature", "humidity", "rain_accumulated"])
+        return pd.DataFrame(
+            columns=[
+                "timestamp",
+                "temperature",
+                "humidity",
+                "rain_accumulated",
+                "device_id",
+                "source",
+            ]
+        )
 
     data = []
     for row in payload:
@@ -101,13 +129,28 @@ def fetch_supabase_measurements() -> pd.DataFrame:
                     if row.get("rain_accumulated") is not None
                     else None
                 ),
+                "device_id": row.get("device_id"),
+                "source": row.get("source"),
             }
         )
 
     if not data:
-        return pd.DataFrame(columns=["timestamp", "temperature", "humidity", "rain_accumulated"])
+        return pd.DataFrame(
+            columns=[
+                "timestamp",
+                "temperature",
+                "humidity",
+                "rain_accumulated",
+                "device_id",
+                "source",
+            ]
+        )
 
-    dataframe = pd.DataFrame(data).sort_values("timestamp").reset_index(drop=True)
+    dataframe = (
+        pd.DataFrame(data)
+        .sort_values("timestamp", kind="stable")
+        .reset_index(drop=True)
+    )
     return dataframe
 
 
@@ -128,7 +171,11 @@ def load_measurements(csv_path: str | Path = DEFAULT_CSV_PATH) -> pd.DataFrame:
     dataframe["timestamp"] = pd.to_datetime(dataframe["timestamp"], errors="coerce")
     if "rain_accumulated" not in dataframe.columns:
         dataframe["rain_accumulated"] = pd.NA
-    dataframe = dataframe.dropna(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
+    dataframe = (
+        dataframe.dropna(subset=["timestamp"])
+        .sort_values("timestamp", kind="stable")
+        .reset_index(drop=True)
+    )
     return dataframe
 
 
@@ -139,10 +186,17 @@ def format_metric_delta(current: float, previous: float | None, unit: str) -> st
     return f"{current - previous:+.2f} {unit}"
 
 
+def _to_dashboard_timezone(timestamps: pd.Series) -> pd.Series:
+    """Interpreta timestamps sem fuso como UTC e converte para o horário da estação."""
+    return pd.to_datetime(timestamps, errors="coerce", utc=True).dt.tz_convert(
+        DASHBOARD_TIMEZONE
+    )
+
+
 def prepare_latest_day_measurements(measurements: pd.DataFrame) -> pd.DataFrame:
     """Retorna as medições do dia mais recente disponível."""
     data = measurements.copy()
-    data["timestamp"] = pd.to_datetime(data["timestamp"], errors="coerce")
+    data["timestamp"] = _to_dashboard_timezone(data["timestamp"])
     data = data.dropna(subset=["timestamp"]).sort_values("timestamp")
     if data.empty:
         return data
@@ -153,11 +207,22 @@ def prepare_latest_day_measurements(measurements: pd.DataFrame) -> pd.DataFrame:
 
 def calculate_rainfall_changes(measurements: pd.DataFrame) -> pd.DataFrame:
     """Calcula as variações do acumulador de chuva, incluindo reinicializações."""
-    data = measurements[["timestamp", "rain_accumulated"]].copy()
-    data["timestamp"] = pd.to_datetime(data["timestamp"], errors="coerce")
+    counter_columns = [
+        column for column in ("source", "device_id") if column in measurements.columns
+    ]
+    data = measurements[["timestamp", "rain_accumulated", *counter_columns]].copy()
+    data["timestamp"] = _to_dashboard_timezone(data["timestamp"])
     data["rain_accumulated"] = pd.to_numeric(data["rain_accumulated"], errors="coerce")
-    data = data.dropna(subset=["timestamp", "rain_accumulated"]).sort_values("timestamp")
-    changes = data["rain_accumulated"].diff()
+    data = (
+        data.dropna(subset=["timestamp", "rain_accumulated"])
+        .sort_values("timestamp", kind="stable")
+    )
+    if counter_columns:
+        changes = data.groupby(counter_columns, dropna=False, sort=False)[
+            "rain_accumulated"
+        ].diff()
+    else:
+        changes = data["rain_accumulated"].diff()
     data["rainfall_change"] = changes
     reset = data["rainfall_change"] < 0
     data.loc[reset, "rainfall_change"] = data.loc[reset, "rain_accumulated"]
@@ -176,7 +241,7 @@ def prepare_daily_history(measurements: pd.DataFrame) -> pd.DataFrame:
         "monthly_rainfall",
     ]
     data = measurements.copy()
-    data["timestamp"] = pd.to_datetime(data["timestamp"], errors="coerce")
+    data["timestamp"] = _to_dashboard_timezone(data["timestamp"])
     for column in ("temperature", "humidity"):
         data[column] = pd.to_numeric(data[column], errors="coerce")
     data = data.dropna(subset=["timestamp"]).sort_values("timestamp")

@@ -45,9 +45,9 @@ A solução será organizada em camadas com foco em robustez, aquisição serial
 - Sprint atual: retomar e validar a atualização das medições no dashboard publicado
 - Prioridade atual: confirmar coleta e sincronização de dados recentes (P1); validar acesso público e operação no Raspberry Pi.
 - Fluxo validado no notebook: STM32 -> USB/serial (COM11, 115200 baud) -> CSV local -> Supabase -> dashboard Streamlit local.
-- O dashboard está publicado no Community Cloud com Python 3.12. A versão local atual consulta o histórico completo do Supabase em páginas e foi validada com 15.317 medições; as mudanças mais recentes ainda não foram publicadas no Cloud.
+- O dashboard está publicado no Community Cloud com Python 3.12. A versão atual consulta o histórico completo do Supabase em páginas e foi validada com 15.317 medições.
 - Os Secrets estão configurados e o usuário confirmou que apontam para o projeto esperado. O commit `4912257` também adicionou mensagens de diagnóstico seguras para falhas HTTP/rede; não houve erro de consulta durante a validação após o deploy.
-- A conexão entre Cloud e Supabase está validada; falta publicar a versão atualizada e confirmar a chegada contínua de novas medições.
+- A conexão entre Cloud e Supabase está validada; falta confirmar a chegada contínua de novas medições. A chuva diária agora calcula diferenças separadamente por origem/dispositivo e agrupa os registros no horário de Brasília.
 - Commits enviados para `main`: `0c8e575` (integração serial/CSV/Supabase/dashboard), `e3811f9` (preparação de Secrets e dependências do Streamlit Cloud), `32a093f` (progresso anterior) e `4912257` (diagnóstico da consulta remota).
 
 ---
@@ -259,7 +259,8 @@ Disponibilizar indicadores e gráficos de monitoramento para o usuário.
 - [x] Carregar todo o histórico do Supabase por páginas, incluindo mais de 10.000 medições.
 - [x] Atualizar os dados do dashboard a cada 60 segundos enquanto a página estiver aberta.
 - [x] Limitar os gráficos de temperatura e umidade ao dia da medição mais recente, mantendo chuva e histórico diário completos.
-- [ ] Publicar no Community Cloud as mudanças locais de paginação, atualização periódica e gráficos do último dia.
+- [x] Publicar no Community Cloud as mudanças de paginação, atualização periódica e gráficos do último dia.
+- [x] Separar acumuladores de chuva por origem/dispositivo e agrupar datas no fuso de Brasília para evitar picos artificiais entre séries distintas.
 - [ ] Confirmar que uma nova medição é coletada e sincronizada continuamente.
 - [ ] Confirmar acesso ao dashboard como visitante sem autenticação.
 - [ ] Implementar filtros por período/dispositivo e alertas de anomalia.
