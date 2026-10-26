@@ -261,6 +261,9 @@ Disponibilizar indicadores e gráficos de monitoramento para o usuário.
 - [x] Limitar os gráficos de temperatura e umidade ao dia da medição mais recente, mantendo chuva e histórico diário completos.
 - [x] Publicar no Community Cloud as mudanças de paginação, atualização periódica e gráficos do último dia.
 - [x] Separar acumuladores de chuva por origem/dispositivo e agrupar datas no fuso de Brasília para evitar picos artificiais entre séries distintas; validação no Supabase: 1,308 mm em 05/10/2026.
+- [x] Manter o histórico carregado na sessão e buscar somente medições com `id` novo a cada 60 segundos; sem novos registros, não rerenderizar o dashboard.
+- [x] Publicar no Community Cloud a atualização incremental do histórico.
+- [ ] Se registros existentes forem editados/excluídos no futuro, adicionar `updated_at`/versionamento ou Supabase Realtime para detectar essas mudanças sem reler o histórico.
 - [ ] Confirmar que uma nova medição é coletada e sincronizada continuamente.
 - [ ] Confirmar acesso ao dashboard como visitante sem autenticação.
 - [ ] Implementar filtros por período/dispositivo e alertas de anomalia.

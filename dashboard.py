@@ -17,6 +17,17 @@ DEFAULT_CSV_PATH = Path("data/measurements.csv")
 SUPABASE_PAGE_SIZE = 1000
 DASHBOARD_REFRESH_SECONDS = 60
 DASHBOARD_TIMEZONE = "America/Sao_Paulo"
+MEASUREMENTS_SESSION_KEY = "dashboard_measurements"
+SKIP_NEXT_MEASUREMENTS_POLL_KEY = "skip_next_measurements_poll"
+MEASUREMENT_COLUMNS = [
+    "id",
+    "timestamp",
+    "temperature",
+    "humidity",
+    "rain_accumulated",
+    "device_id",
+    "source",
+]
 
 
 st.set_page_config(page_title="Estação Experimental", page_icon="🌡️", layout="wide")
@@ -43,20 +54,11 @@ def _get_streamlit_secret(name: str) -> str | None:
     return str(value) if value else None
 
 
-def fetch_supabase_measurements() -> pd.DataFrame:
-    """Busca todas as leituras em páginas e converte para DataFrame."""
+def fetch_supabase_measurements(after_id: int | None = None) -> pd.DataFrame:
+    """Busca leituras do Supabase em páginas, opcionalmente após um ID."""
     url, key = get_supabase_settings()
     if not url or not key:
-        return pd.DataFrame(
-            columns=[
-                "timestamp",
-                "temperature",
-                "humidity",
-                "rain_accumulated",
-                "device_id",
-                "source",
-            ]
-        )
+        return pd.DataFrame(columns=MEASUREMENT_COLUMNS)
 
     endpoint = f"{url.rstrip('/')}/rest/v1/measurements"
     headers = {
@@ -69,11 +71,13 @@ def fetch_supabase_measurements() -> pd.DataFrame:
         offset = 0
         while True:
             params = {
-                "select": "measured_at,temperature,humidity,rain_accumulated,device_id,source",
-                "order": "measured_at.asc,id.asc",
+                "select": "id,measured_at,temperature,humidity,rain_accumulated,device_id,source",
+                "order": "id.asc",
                 "limit": str(SUPABASE_PAGE_SIZE),
                 "offset": str(offset),
             }
+            if after_id is not None:
+                params["id"] = f"gt.{after_id}"
             response = requests.get(endpoint, headers=headers, params=params, timeout=30)
             response.raise_for_status()
             page = response.json()
@@ -91,28 +95,10 @@ def fetch_supabase_measurements() -> pd.DataFrame:
             "Falha ao consultar o Supabase"
             f"{status}. Confira a URL, a chave pública e as permissões de leitura."
         )
-        return pd.DataFrame(
-            columns=[
-                "timestamp",
-                "temperature",
-                "humidity",
-                "rain_accumulated",
-                "device_id",
-                "source",
-            ]
-        )
+        return pd.DataFrame(columns=MEASUREMENT_COLUMNS)
 
     if not payload:
-        return pd.DataFrame(
-            columns=[
-                "timestamp",
-                "temperature",
-                "humidity",
-                "rain_accumulated",
-                "device_id",
-                "source",
-            ]
-        )
+        return pd.DataFrame(columns=MEASUREMENT_COLUMNS)
 
     data = []
     for row in payload:
@@ -121,6 +107,7 @@ def fetch_supabase_measurements() -> pd.DataFrame:
             continue
         data.append(
             {
+                "id": int(row["id"]) if row.get("id") is not None else None,
                 "timestamp": pd.to_datetime(measured_at),
                 "temperature": float(row.get("temperature", 0.0)),
                 "humidity": float(row.get("humidity", 0.0)),
@@ -135,20 +122,11 @@ def fetch_supabase_measurements() -> pd.DataFrame:
         )
 
     if not data:
-        return pd.DataFrame(
-            columns=[
-                "timestamp",
-                "temperature",
-                "humidity",
-                "rain_accumulated",
-                "device_id",
-                "source",
-            ]
-        )
+        return pd.DataFrame(columns=MEASUREMENT_COLUMNS)
 
     dataframe = (
         pd.DataFrame(data)
-        .sort_values("timestamp", kind="stable")
+        .sort_values(["timestamp", "id"], kind="stable")
         .reset_index(drop=True)
     )
     return dataframe
@@ -177,6 +155,33 @@ def load_measurements(csv_path: str | Path = DEFAULT_CSV_PATH) -> pd.DataFrame:
         .reset_index(drop=True)
     )
     return dataframe
+
+
+def merge_new_measurements(
+    existing: pd.DataFrame, new_measurements: pd.DataFrame
+) -> pd.DataFrame:
+    """Acrescenta leituras novas ao histórico sem duplicar IDs já carregados."""
+    if new_measurements.empty:
+        return existing
+    if existing.empty:
+        return new_measurements.sort_values(["timestamp", "id"], kind="stable").reset_index(
+            drop=True
+        )
+
+    combined = pd.concat([existing, new_measurements], ignore_index=True)
+    if "id" in combined.columns:
+        identified = combined[combined["id"].notna()].drop_duplicates("id", keep="last")
+        local_only = combined[combined["id"].isna()]
+        combined = pd.concat([local_only, identified], ignore_index=True)
+    return combined.sort_values(["timestamp", "id"], kind="stable").reset_index(drop=True)
+
+
+def get_latest_measurement_id(measurements: pd.DataFrame) -> int | None:
+    """Retorna o maior ID Supabase já carregado, se houver."""
+    if "id" not in measurements.columns:
+        return None
+    ids = pd.to_numeric(measurements["id"], errors="coerce").dropna()
+    return int(ids.max()) if not ids.empty else None
 
 
 def format_metric_delta(current: float, previous: float | None, unit: str) -> str | None:
@@ -318,8 +323,37 @@ def prepare_monthly_rainfall(measurements: pd.DataFrame) -> tuple[str, pd.DataFr
     return month_label, chart_data
 
 
-@st.fragment(run_every=DASHBOARD_REFRESH_SECONDS, key="dashboard")
-def render_dashboard() -> None:
+@st.fragment(run_every=DASHBOARD_REFRESH_SECONDS, key="supabase-poll")
+def poll_measurements() -> None:
+    """Consulta apenas leituras novas e rerenderiza o painel se houver mudanças."""
+    if st.session_state.pop(SKIP_NEXT_MEASUREMENTS_POLL_KEY, False):
+        return
+
+    measurements = st.session_state[MEASUREMENTS_SESSION_KEY]
+    if not all(get_supabase_settings()):
+        refreshed = load_measurements(DEFAULT_CSV_PATH)
+        if not measurements.equals(refreshed):
+            st.session_state[MEASUREMENTS_SESSION_KEY] = refreshed
+            st.rerun()
+        return
+
+    latest_id = get_latest_measurement_id(measurements)
+    new_measurements = (
+        fetch_supabase_measurements(after_id=latest_id)
+        if latest_id is not None
+        else fetch_supabase_measurements()
+    )
+    if new_measurements.empty:
+        return
+
+    st.session_state[MEASUREMENTS_SESSION_KEY] = merge_new_measurements(
+        measurements, new_measurements
+    )
+    st.session_state[SKIP_NEXT_MEASUREMENTS_POLL_KEY] = True
+    st.rerun()
+
+
+def render_dashboard(measurements: pd.DataFrame) -> None:
     """Renderiza um painel executivo com indicadores e histórico de dados."""
     st.markdown(
         """
@@ -342,8 +376,6 @@ def render_dashboard() -> None:
     supabase_configured = all(get_supabase_settings())
     st.title("Estação Experimental")
     st.caption("Painel executivo de monitoramento ambiental")
-
-    measurements = load_measurements(DEFAULT_CSV_PATH)
 
     if measurements.empty:
         if supabase_configured:
@@ -429,7 +461,12 @@ def render_dashboard() -> None:
 
 def main() -> None:
     """Dashboard executivo da estação Raspberry em modo online-first."""
-    render_dashboard()
+    if MEASUREMENTS_SESSION_KEY not in st.session_state:
+        st.session_state[MEASUREMENTS_SESSION_KEY] = load_measurements(DEFAULT_CSV_PATH)
+        st.session_state[SKIP_NEXT_MEASUREMENTS_POLL_KEY] = True
+
+    render_dashboard(st.session_state[MEASUREMENTS_SESSION_KEY])
+    poll_measurements()
 
 
 if __name__ == "__main__":

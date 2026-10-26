@@ -8,7 +8,9 @@ from dashboard import (
     fetch_supabase_measurements,
     format_metric_delta,
     get_supabase_settings,
+    get_latest_measurement_id,
     load_measurements,
+    merge_new_measurements,
     prepare_daily_history,
     prepare_latest_day_measurements,
     prepare_monthly_rainfall,
@@ -231,6 +233,7 @@ def test_load_measurements_reads_supabase_when_configured(monkeypatch) -> None:
 
     rows = [
         {
+            "id": 1,
             "measured_at": "2026-10-01T12:00:00+00:00",
             "temperature": 21.4,
             "humidity": 63.1,
@@ -256,6 +259,7 @@ def test_load_measurements_reads_supabase_when_configured(monkeypatch) -> None:
     assert dataframe.iloc[0]["temperature"] == 21.4
     assert dataframe.iloc[0]["humidity"] == 63.1
     assert dataframe.iloc[0]["rain_accumulated"] == 3.8
+    assert dataframe.iloc[0]["id"] == 1
 
 
 def test_fetch_supabase_measurements_reads_more_than_ten_thousand_rows(monkeypatch) -> None:
@@ -263,6 +267,7 @@ def test_fetch_supabase_measurements_reads_more_than_ten_thousand_rows(monkeypat
     monkeypatch.setenv("SUPABASE_ANON_KEY", "anon-key")
     rows = [
         {
+            "id": index + 1,
             "measured_at": f"2026-10-{(index // 1440) + 1:02}T00:00:00+00:00",
             "temperature": 20.0 + index / 10000,
             "humidity": 60.0,
@@ -297,6 +302,110 @@ def test_fetch_supabase_measurements_reads_more_than_ten_thousand_rows(monkeypat
     assert offsets[0] == 0
     assert offsets[-1] == len(rows)
     assert len(offsets) > 10
+    assert get_latest_measurement_id(dataframe) == len(rows)
+
+
+def test_fetch_supabase_measurements_queries_only_rows_after_id(monkeypatch) -> None:
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon-key")
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def __init__(self, rows: list[dict]) -> None:
+            self.rows = rows
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> list[dict]:
+            return self.rows
+
+    row = {
+        "id": 101,
+        "measured_at": "2026-10-24T22:00:00+00:00",
+        "temperature": 25.0,
+        "humidity": 70.0,
+        "rain_accumulated": 2.1,
+        "device_id": "est_01",
+        "source": "stm32",
+    }
+
+    def fake_get(*args, **kwargs) -> FakeResponse:
+        calls.append(kwargs["params"])
+        return FakeResponse([row] if len(calls) == 1 else [])
+
+    monkeypatch.setattr("dashboard.requests.get", fake_get)
+
+    dataframe = fetch_supabase_measurements(after_id=100)
+
+    assert len(dataframe) == 1
+    assert dataframe.iloc[0]["id"] == 101
+    assert calls[0]["id"] == "gt.100"
+    assert calls[0]["order"] == "id.asc"
+    assert calls[0]["select"].startswith("id,")
+    assert len(calls) == 2
+
+
+def test_fetch_supabase_measurements_returns_empty_when_there_are_no_new_rows(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon-key")
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> list[dict]:
+            return []
+
+    def fake_get(*args, **kwargs) -> FakeResponse:
+        calls.append(kwargs["params"])
+        return FakeResponse()
+
+    monkeypatch.setattr("dashboard.requests.get", fake_get)
+
+    dataframe = fetch_supabase_measurements(after_id=15_317)
+
+    assert dataframe.empty
+    assert len(calls) == 1
+    assert calls[0]["id"] == "gt.15317"
+
+
+def test_merge_new_measurements_preserves_history_and_deduplicates_ids() -> None:
+    existing = pd.DataFrame(
+        {
+            "id": [1, 2],
+            "timestamp": pd.to_datetime(
+                ["2026-10-24T10:00:00+00:00", "2026-10-24T11:00:00+00:00"]
+            ),
+            "temperature": [20.0, 21.0],
+            "humidity": [60.0, 61.0],
+            "rain_accumulated": [1.0, 1.2],
+        }
+    )
+    new_measurements = pd.DataFrame(
+        {
+            "id": [2, 3],
+            "timestamp": pd.to_datetime(
+                ["2026-10-24T11:00:00+00:00", "2026-10-24T12:00:00+00:00"]
+            ),
+            "temperature": [21.0, 22.0],
+            "humidity": [61.0, 62.0],
+            "rain_accumulated": [1.2, 1.4],
+        }
+    )
+
+    merged = merge_new_measurements(existing, new_measurements)
+
+    assert merged["id"].tolist() == [1, 2, 3]
+    assert get_latest_measurement_id(merged) == 3
+    assert merge_new_measurements(merged, new_measurements).equals(merged)
 
 
 def test_fetch_supabase_measurements_reports_request_errors(monkeypatch) -> None:
