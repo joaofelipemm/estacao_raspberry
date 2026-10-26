@@ -260,7 +260,7 @@ Disponibilizar indicadores e gráficos de monitoramento para o usuário.
 - [x] Atualizar os dados do dashboard a cada 60 segundos enquanto a página estiver aberta.
 - [x] Limitar os gráficos de temperatura e umidade ao dia da medição mais recente, mantendo chuva e histórico diário completos.
 - [x] Publicar no Community Cloud as mudanças de paginação, atualização periódica e gráficos do último dia.
-- [x] Separar acumuladores de chuva por origem/dispositivo e agrupar datas no fuso de Brasília para evitar picos artificiais entre séries distintas.
+- [x] Separar acumuladores de chuva por origem/dispositivo e agrupar datas no fuso de Brasília para evitar picos artificiais entre séries distintas; validação no Supabase: 1,308 mm em 05/10/2026.
 - [ ] Confirmar que uma nova medição é coletada e sincronizada continuamente.
 - [ ] Confirmar acesso ao dashboard como visitante sem autenticação.
 - [ ] Implementar filtros por período/dispositivo e alertas de anomalia.
