@@ -1,4 +1,5 @@
 import pytest
+from serial import SerialException
 
 from estacao_raspberry.main import main
 from estacao_raspberry.sensor import SensorReading
@@ -133,6 +134,29 @@ def test_serial_reader_ignores_status_lines_and_reads_dados_record() -> None:
     reader.close()
 
 
+def test_serial_reader_parses_measurement_from_rx_data_frame() -> None:
+    fake_port = FakeSerialPort(
+        [
+            "TX: PERGUNTA:1:92 -> OK\n",
+            "RX: est_01;19/11/2026;08:02:06;22.92;64.12;0.0\n",
+        ]
+    )
+    reader = SerialReader(
+        port="COM13",
+        serial_factory=lambda *args, **kwargs: fake_port,
+    )
+
+    reading = reader.read_measurement()
+
+    assert reading.device_id == "est_01"
+    assert reading.measured_at is not None
+    assert reading.measured_at.strftime("%d/%m/%Y %H:%M:%S") == "19/11/2026 08:02:06"
+    assert reading.temperature == 22.92
+    assert reading.humidity == 64.12
+    assert reading.rain_accumulated == 0.0
+    reader.close()
+
+
 def test_resolve_serial_port_uses_the_only_detected_port(monkeypatch) -> None:
     monkeypatch.setattr("estacao_raspberry.serial_reader.list_serial_ports", lambda: ["COM11"])
 
@@ -166,6 +190,48 @@ def test_main_reads_serial_data_and_persists_it(tmp_path, monkeypatch) -> None:
     assert "19.7" in content
     assert "62.4" in content
     assert "8.3" in content
+
+
+def test_main_handles_serial_communication_failure_and_closes_port(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    class BrokenSerialPort:
+        closed = False
+
+        def readline(self) -> bytes:
+            raise SerialException(
+                "ClearCommError failed (PermissionError(13, 'O dispositivo não reconhece o comando.'))"
+            )
+
+        def close(self) -> None:
+            self.closed = True
+
+    fake_port = BrokenSerialPort()
+    monkeypatch.setattr(
+        "estacao_raspberry.main.DEFAULT_SETTINGS",
+        type(
+            "Settings",
+            (),
+            {
+                "data_dir": tmp_path,
+                "ensure_directories": lambda self: None,
+                "resolved_supabase_url": "",
+                "resolved_supabase_key": "",
+            },
+        )(),
+    )
+
+    saved_count = main(
+        port="COM13",
+        serial_factory=lambda *args, **kwargs: fake_port,
+        file_path=tmp_path / "measurements.csv",
+    )
+
+    output = capsys.readouterr().out
+    assert saved_count == 0
+    assert fake_port.closed
+    assert "Falha na comunicação com a porta serial COM13" in output
+    assert "nenhum outro programa está usando a porta" in output
 
 
 def test_main_syncs_after_persisting_when_supabase_is_configured(tmp_path, monkeypatch) -> None:

@@ -172,6 +172,12 @@ class SerialReader:
             payload = raw.decode("utf-8", errors="replace").strip()
             if not payload:
                 continue
+            if payload.upper().startswith("RX:"):
+                payload = payload.split(":", 1)[1].strip()
+                if not payload or payload.upper().startswith("RESPOSTA:"):
+                    continue
+                if not payload.upper().startswith("DADOS:"):
+                    payload = f"DADOS:{payload}"
             if not (
                 payload.upper().startswith("DADOS:")
                 or payload.startswith(self.protocol.start_marker)

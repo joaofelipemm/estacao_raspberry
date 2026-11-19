@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
+from serial import SerialException
+
 from .config import DEFAULT_SETTINGS
 from .sensor import SensorReading
 from .serial_reader import SerialReader, resolve_serial_port
@@ -71,6 +73,12 @@ def main(
                     )
     except KeyboardInterrupt:
         print("\nColeta serial encerrada.")
+    except SerialException as exc:
+        print(
+            f"\nFalha na comunicação com a porta serial {serial_port}: {exc}\n"
+            "Verifique se o dispositivo está conectado e se nenhum outro "
+            "programa está usando a porta; reconecte-o e execute novamente."
+        )
     finally:
         reader.close()
 
